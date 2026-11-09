@@ -72,6 +72,50 @@ async def island_set_style(style: str = "island") -> str:
     return json.dumps(res, ensure_ascii=False)
 
 @mcp.tool()
+async def island_point_at(x: int, y: int, label: str = "", duration: float = 3.5, color: str = None) -> str:
+    """
+    Pointe visuellement un élément sur l'écran de l'utilisateur avec un halo laser et une étiquette.
+    Agit comme le troisième bras d'Antigravity (inspiré de HeyClicky).
+    - x : Coordonnée horizontale en pixels
+    - y : Coordonnée verticale en pixels
+    - label : Message ou libellé explicatif affiché au-dessus du point (ex: 'Cliquez ici')
+    - duration : Durée d'affichage en secondes avant disparition progressive
+    - color : Couleur du pointeur (ex: '#38bdf8' pour cyan, '#22c55e' pour émeraude)
+    """
+    payload = {
+        "action": "point_at",
+        "x": x,
+        "y": y,
+        "label": label,
+        "duration": duration
+    }
+    if color:
+        payload["color"] = color
+    res = await send_command_to_island(payload)
+    return json.dumps(res, ensure_ascii=False)
+
+@mcp.tool()
+async def island_capture_screen(monitor_index: int = 1) -> str:
+    """
+    Capture instantanément l'écran Windows de l'utilisateur à très haute vitesse via MSS.
+    Permet à Antigravity de 'voir' ce qui est affiché à l'écran.
+    Retourne le chemin absolu du fichier PNG capturé ainsi que ses dimensions.
+    """
+    res = await send_command_to_island({
+        "action": "capture_screen",
+        "monitor": monitor_index
+    })
+    return json.dumps(res, ensure_ascii=False)
+
+@mcp.tool()
+async def island_get_screen_info() -> str:
+    """
+    Récupère la résolution et la liste des écrans connectés sur la machine Windows de l'utilisateur.
+    """
+    res = await send_command_to_island({"action": "get_screens"})
+    return json.dumps(res, ensure_ascii=False)
+
+@mcp.tool()
 async def island_audio_pulse(power: float = 0.5) -> str:
     """
     Anime le visualiseur d'ondes audio sur l'encoche (valeur entre 0.0 et 1.0).

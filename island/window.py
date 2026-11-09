@@ -11,6 +11,7 @@ from PyQt6.QtGui import (
 from island.config import Config
 from island.components.waveform import WaveformVisualizer
 from island.components.glowing_orb import GlowingOrb
+from island.pointer import PointerOverlay
 
 def create_iphone_x_notch_path(x: float, y: float, w: float, h: float, r_bottom: float = 14.0, r_ear: float = 8.0) -> QPainterPath:
     """Génère la forme géométrique authentique d'une encoche style iPhone X / MacBook avec cornes concaves."""
@@ -112,6 +113,9 @@ class IslandWindow(QWidget):
         self.render_timer = QTimer(self)
         self.render_timer.timeout.connect(self._on_tick)
         self.render_timer.start(16)
+
+        # Pointeur virtuel & surbrillance d'écran (HeyClicky inspired)
+        self.pointer = PointerOverlay()
 
         self.state_change_requested.connect(self.apply_remote_command)
         self._update_geometry()
@@ -248,6 +252,13 @@ class IslandWindow(QWidget):
             self.apply_settings({"style_mode": style})
         elif action == "settings":
             self.apply_settings(data.get("settings", {}))
+        elif action == "point_at":
+            x = data.get("x", 500)
+            y = data.get("y", 300)
+            label = data.get("label", "")
+            duration = float(data.get("duration", 3.5))
+            color = data.get("color", None)
+            self.pointer.point_at(x, y, label, duration, color)
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:

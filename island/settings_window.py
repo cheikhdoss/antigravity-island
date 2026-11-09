@@ -4,13 +4,20 @@ import os
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, 
-    QFrame, QSlider, QComboBox, QSystemTrayIcon, QMenu, QColorDialog
+    QFrame, QSlider, QComboBox, QSystemTrayIcon, QMenu, QColorDialog, QScrollArea
 )
 from PyQt6.QtGui import QIcon, QColor, QFont, QPixmap, QPainter, QBrush
 
 from island.config import Config
 
-SETTINGS_FILE = os.path.join(os.path.dirname(__file__), "user_settings.json")
+def get_settings_file_path():
+    """Chemin de configuration permanent et persistant dans le profil utilisateur Windows."""
+    appdata = os.environ.get("APPDATA")
+    if not appdata:
+        appdata = os.path.expanduser("~")
+    settings_dir = os.path.join(appdata, "AntigravityIsland")
+    os.makedirs(settings_dir, exist_ok=True)
+    return os.path.join(settings_dir, "settings.json")
 
 def load_settings():
     default_settings = {
@@ -23,19 +30,25 @@ def load_settings():
         "island_visible": True,
         "ptt_mode": "hybrid",        # "hybrid", "hold", "toggle"
     }
-    if os.path.exists(SETTINGS_FILE):
+    settings_path = get_settings_file_path()
+    if os.path.exists(settings_path):
         try:
-            with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
+            with open(settings_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 default_settings.update(data)
-        except Exception:
-            pass
+                print(f"[Settings] Paramètres chargés depuis {settings_path}")
+        except Exception as e:
+            print("Erreur lecture settings:", e)
+    else:
+        save_settings(default_settings)
     return default_settings
 
 def save_settings(settings):
     try:
-        with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
+        settings_path = get_settings_file_path()
+        with open(settings_path, "w", encoding="utf-8") as f:
             json.dump(settings, f, indent=2)
+        print(f"[Settings] Paramètres enregistrés dans {settings_path}")
     except Exception as e:
         print("Erreur sauvegarde settings:", e)
 
@@ -127,11 +140,70 @@ class SettingsWindow(QWidget):
             }
             QComboBox {
                 background-color: #1e293b;
-                border: 1px solid #334155;
+                border: 1px solid #475569;
                 border-radius: 6px;
-                padding: 5px 10px;
+                padding: 6px 12px;
                 color: #ffffff;
                 font-size: 12px;
+                font-weight: 500;
+                min-width: 220px;
+            }
+            QComboBox:hover {
+                border-color: #38bdf8;
+                background-color: #243247;
+            }
+            QComboBox::drop-down {
+                subcontrol-origin: padding;
+                subcontrol-position: top right;
+                width: 26px;
+                border-left: 1px solid #475569;
+                border-top-right-radius: 6px;
+                border-bottom-right-radius: 6px;
+                background-color: #1e293b;
+            }
+            QComboBox::down-arrow {
+                border-left: 4px solid transparent;
+                border-right: 4px solid transparent;
+                border-top: 5px solid #38bdf8;
+                width: 0px;
+                height: 0px;
+            }
+            QComboBox QAbstractItemView {
+                background-color: #0f172a;
+                color: #ffffff;
+                selection-background-color: #0284c7;
+                selection-color: #ffffff;
+                border: 1px solid #475569;
+                border-radius: 6px;
+                padding: 4px;
+                outline: none;
+            }
+            QComboBox QAbstractItemView::item {
+                min-height: 28px;
+                padding: 4px 8px;
+                color: #f8fafc;
+            }
+            QComboBox QAbstractItemView::item:selected {
+                background-color: #0284c7;
+                color: #ffffff;
+            }
+            QScrollBar:vertical {
+                border: none;
+                background: #0b0f19;
+                width: 8px;
+                margin: 0px;
+                border-radius: 4px;
+            }
+            QScrollBar::handle:vertical {
+                background: #334155;
+                min-height: 20px;
+                border-radius: 4px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background: #475569;
+            }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                height: 0px;
             }
         """)
 
@@ -139,13 +211,13 @@ class SettingsWindow(QWidget):
 
     def _build_ui(self):
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(20, 20, 20, 20)
-        main_layout.setSpacing(14)
+        main_layout.setContentsMargins(20, 20, 20, 16)
+        main_layout.setSpacing(12)
 
-        # En-tête
+        # En-tête (Fixe)
         header_layout = QHBoxLayout()
         header_text = QVBoxLayout()
-        title = QLabel("Antigravity Island")
+        title = QLabel("Antigravity Control Center")
         title.setProperty("class", "title")
         subtitle = QLabel("Design & Disposition de l'encoche")
         subtitle.setProperty("class", "subtitle")
@@ -158,6 +230,17 @@ class SettingsWindow(QWidget):
         status_badge.setStyleSheet("background-color: rgba(34, 197, 94, 0.15); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.3); border-radius: 12px; font-size: 11px; font-weight: 600; padding: 4px 8px;")
         header_layout.addWidget(status_badge)
         main_layout.addLayout(header_layout)
+
+        # Zone défilante (Scrollable) pour garantir l'accessibilité sur tous les écrans
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
+        
+        scroll_content = QWidget()
+        scroll_content.setStyleSheet("background: transparent;")
+        content_layout = QVBoxLayout(scroll_content)
+        content_layout.setContentsMargins(0, 0, 10, 0)
+        content_layout.setSpacing(12)
 
         # CARTE 1 : Disposition & Accrochage au Header
         card_disp = QFrame()
@@ -208,7 +291,7 @@ class SettingsWindow(QWidget):
         row_align.addWidget(self.combo_align)
         layout_disp.addLayout(row_align)
 
-        main_layout.addWidget(card_disp)
+        content_layout.addWidget(card_disp)
 
         # CARTE 2 : Dimension de l'encoche
         card_size = QFrame()
@@ -246,7 +329,7 @@ class SettingsWindow(QWidget):
         layout_h.addWidget(self.slider_h)
         layout_size.addLayout(layout_h)
 
-        main_layout.addWidget(card_size)
+        content_layout.addWidget(card_size)
 
         # CARTE 3 : Personnalisation Couleurs & Test
         card_style = QFrame()
@@ -303,7 +386,7 @@ class SettingsWindow(QWidget):
             test_row.addWidget(b)
         layout_style.addLayout(test_row)
 
-        main_layout.addWidget(card_style)
+        content_layout.addWidget(card_style)
 
         # CARTE 4 : Raccourci Global Push-to-Talk (Windows + Alt)
         card_ptt = QFrame()
@@ -348,17 +431,18 @@ class SettingsWindow(QWidget):
         row_ptt_mode.addWidget(self.combo_ptt)
         layout_ptt.addLayout(row_ptt_mode)
 
-        main_layout.addWidget(card_ptt)
+        content_layout.addWidget(card_ptt)
 
-        # Bouton Afficher / Masquer
+        scroll.setWidget(scroll_content)
+        main_layout.addWidget(scroll, 1)
+
+        # Bouton Afficher / Masquer (Fixe en bas)
         self.toggle_btn = QPushButton("Masquer l'encoche" if self.settings.get("island_visible") else "Afficher l'encoche")
         self.toggle_btn.setProperty("class", "primary")
         self.toggle_btn.clicked.connect(self._on_toggle_clicked)
         main_layout.addWidget(self.toggle_btn)
 
-        main_layout.addStretch()
-
-        # Pied de page
+        # Pied de page (Fixe en bas)
         footer_layout = QHBoxLayout()
         footer_lbl = QLabel("Antigravity Island • 0 px gap header")
         footer_lbl.setStyleSheet("font-size: 11px; color: #64748b;")

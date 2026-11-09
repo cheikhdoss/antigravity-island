@@ -36,6 +36,19 @@ class IslandWebSocketServer:
                     try:
                         data = json.loads(raw_msg)
                         action = data.get("action", "set_state")
+
+                        # Capture d'écran instantanée (Vision HeyClicky)
+                        if action == "capture_screen":
+                            from island.vision import capture_screen
+                            shot_res = capture_screen(monitor_index=data.get("monitor", 1))
+                            await websocket.send(json.dumps(shot_res, ensure_ascii=False))
+                            continue
+                        elif action == "get_screens":
+                            from island.vision import get_screens_info
+                            info = get_screens_info()
+                            await websocket.send(json.dumps(info, ensure_ascii=False))
+                            continue
+
                         # Transmission thread-safe à l'interface PyQt6
                         self.window.state_change_requested.emit(action, data)
                         
