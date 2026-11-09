@@ -22,7 +22,7 @@ class IslandWebSocketServer:
         """Démarre le serveur dans un thread dédié."""
         self.thread = threading.Thread(target=self._run_loop, daemon=True)
         self.thread.start()
-        print(f"🚀 Serveur WebSocket Antigravity démarré sur ws://{self.host}:{self.port}")
+        print(f"[IslandWebSocketServer] Serveur demarre sur ws://{self.host}:{self.port}")
 
     def _run_loop(self):
         self.loop = asyncio.new_event_loop()
@@ -30,7 +30,7 @@ class IslandWebSocketServer:
 
         async def handler(websocket):
             remote_ip = websocket.remote_address
-            print(f"🔌 Connexion cliente reçue de {remote_ip}")
+            print(f"[IslandWebSocketServer] Client connecte : {remote_ip}")
             try:
                 async for raw_msg in websocket:
                     try:
@@ -49,7 +49,7 @@ class IslandWebSocketServer:
                     except json.JSONDecodeError:
                         await websocket.send(json.dumps({"status": "error", "message": "JSON invalide"}))
             except websockets.exceptions.ConnectionClosed:
-                print(f"🔌 Client déconnecté : {remote_ip}")
+                print(f"[IslandWebSocketServer] Client deconnecte : {remote_ip}")
 
         async def main():
             async with websockets.serve(handler, self.host, self.port):
@@ -58,4 +58,4 @@ class IslandWebSocketServer:
         try:
             self.loop.run_until_complete(main())
         except Exception as e:
-            print(f"⚠️ Erreur WebSocket : {e}")
+            print(f"[IslandWebSocketServer] Erreur : {e}")

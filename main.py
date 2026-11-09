@@ -1,5 +1,19 @@
 import sys
 import os
+
+# Redirection sécurisée des flux standards pour PyInstaller --windowed
+log_file_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "antigravity_island.log")
+try:
+    log_file = open(log_file_path, "a", encoding="utf-8", buffering=1)
+    sys.stdout = log_file
+    sys.stderr = log_file
+except Exception:
+    class NullWriter:
+        def write(self, s): pass
+        def flush(self): pass
+    sys.stdout = NullWriter()
+    sys.stderr = NullWriter()
+
 from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
 from PyQt6.QtGui import QIcon, QPixmap, QPainter, QColor, QBrush
 from PyQt6.QtCore import Qt
@@ -77,13 +91,18 @@ def main():
     tray.setToolTip("Antigravity Island - En ligne")
     tray.show()
 
-    print("=" * 60)
-    print("🏝️  Antigravity Island & Control Center sont lancés !")
-    print("👉 Fenêtre de configuration ouverte pour personnaliser l'application.")
-    print("👉 Icône active dans la barre des tâches (System Tray).")
-    print("=" * 60)
+    print("============================================================")
+    print("[Antigravity Island] Application et Centre de controle lances.")
+    print("Fenetre de configuration ouverte pour personnaliser l'application.")
+    print("Icone active dans la zone de notification (System Tray).")
+    print("============================================================")
 
     sys.exit(app.exec())
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        import traceback
+        with open(r"C:\Users\pro\.gemini\antigravity\scratch\island_debug.log", "w", encoding="utf-8") as f:
+            f.write(traceback.format_exc())

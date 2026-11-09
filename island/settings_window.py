@@ -212,7 +212,7 @@ class SettingsWindow(QWidget):
             color_row.addWidget(btn)
 
         # Bouton Sélecteur Libre
-        custom_color_btn = QPushButton("🎨 Libre")
+        custom_color_btn = QPushButton("Personnaliser...")
         custom_color_btn.setProperty("class", "secondary")
         custom_color_btn.clicked.connect(self._pick_custom_color)
         color_row.addWidget(custom_color_btn)
