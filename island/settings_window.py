@@ -15,6 +15,7 @@ SETTINGS_FILE = os.path.join(os.path.dirname(__file__), "user_settings.json")
 def load_settings():
     default_settings = {
         "accent_color": "#38bdf8",
+        "style_mode": "island",      # "island" (pilule) ou "iphonex" (encoche iPhone X)
         "position_mode": "notch",   # "notch" (collé au bord) ou "floating"
         "alignment": "center",       # "center", "left", "right"
         "idle_width": 110,           # Largeur au repos
@@ -167,6 +168,18 @@ class SettingsWindow(QWidget):
         lbl_disp.setProperty("class", "section")
         layout_disp.addWidget(lbl_disp)
 
+        # Style de l'encoche (Dynamic Island vs Encoche iPhone X)
+        row_style = QHBoxLayout()
+        row_style.addWidget(QLabel("Style de l'encoche :"))
+        row_style.addStretch()
+        self.combo_style = QComboBox()
+        self.combo_style.addItems(["Dynamic Island (Pilule moderne)", "Encoche iPhone X (Notch avec cornes)"])
+        if self.settings.get("style_mode") == "iphonex":
+            self.combo_style.setCurrentIndex(1)
+        self.combo_style.currentIndexChanged.connect(self._on_style_changed)
+        row_style.addWidget(self.combo_style)
+        layout_disp.addLayout(row_style)
+
         # Accrochage au bord (Notch collé vs Flottant)
         row_pos = QHBoxLayout()
         row_pos.addWidget(QLabel("Fixation :"))
@@ -311,6 +324,21 @@ class SettingsWindow(QWidget):
         quit_btn.clicked.connect(lambda: QApplication.quit())
         footer_layout.addWidget(quit_btn)
         main_layout.addLayout(footer_layout)
+
+    def _on_style_changed(self, idx: int):
+        style = "iphonex" if idx == 1 else "island"
+        self.settings["style_mode"] = style
+        if style == "iphonex":
+            # L'encoche iPhone X s'ancre naturellement au bord de l'écran (Y=0)
+            self.combo_mode.setCurrentIndex(0)
+            self.settings["position_mode"] = "notch"
+            # Donner une largeur d'encoche iPhone X harmonieuse si elle était trop petite
+            if self.settings.get("idle_width", 110) < 140:
+                self.slider_w.setValue(160)
+                self.settings["idle_width"] = 160
+                self.lbl_w_val.setText("160 px")
+        save_settings(self.settings)
+        self.settings_changed.emit(self.settings)
 
     def _on_mode_changed(self, idx: int):
         mode = "floating" if idx == 1 else "notch"

@@ -61,6 +61,17 @@ async def island_idle() -> str:
     return json.dumps(res, ensure_ascii=False)
 
 @mcp.tool()
+async def island_set_style(style: str = "island") -> str:
+    """
+    Change le style d'encoche affiché sur l'écran Windows.
+    Valeurs acceptées :
+    - 'island' : Dynamic Island (pilule flottante moderne)
+    - 'iphonex' : Encoche iPhone X authentique (avec cornes concaves et grille haut-parleur)
+    """
+    res = await send_command_to_island({"action": "set_style", "style": style})
+    return json.dumps(res, ensure_ascii=False)
+
+@mcp.tool()
 async def island_audio_pulse(power: float = 0.5) -> str:
     """
     Anime le visualiseur d'ondes audio sur l'encoche (valeur entre 0.0 et 1.0).
