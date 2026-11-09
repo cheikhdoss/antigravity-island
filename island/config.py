@@ -30,28 +30,28 @@ class Config:
     # Configurations des états
     STATES = {
         "idle": IslandStateConfig(
-            width=150,
-            height=36,
-            radius=18,
-            title="Antigravity"
+            width=110,
+            height=30,
+            radius=15,
+            title=""
         ),
         "listening": IslandStateConfig(
             width=340,
-            height=52,
-            radius=26,
+            height=50,
+            radius=25,
             title="À votre écoute..."
         ),
         "thinking": IslandStateConfig(
             width=280,
-            height=48,
-            radius=24,
+            height=46,
+            radius=23,
             title="Analyse en cours..."
         ),
         "speaking": IslandStateConfig(
             width=480,
             height=90,
             radius=28,
-            title="Antigravity vous répond"
+            title="Réponse"
         ),
         "action": IslandStateConfig(
             width=500,

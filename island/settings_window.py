@@ -15,9 +15,11 @@ SETTINGS_FILE = os.path.join(os.path.dirname(__file__), "user_settings.json")
 def load_settings():
     default_settings = {
         "accent_color": "#38bdf8",
-        "position_mode": "top",  # "top" (collé) ou "floating" (flottant à 12px)
+        "position_mode": "notch",   # "notch" (collé au bord) ou "floating"
+        "alignment": "center",       # "center", "left", "right"
+        "idle_width": 110,           # Largeur au repos
+        "idle_height": 30,           # Hauteur au repos
         "island_visible": True,
-        "opacity": 250
     }
     if os.path.exists(SETTINGS_FILE):
         try:
@@ -38,7 +40,7 @@ def save_settings(settings):
 class SettingsWindow(QWidget):
     """
     Panneau de contrôle & Paramètres pour Antigravity Island.
-    Permet à l'utilisateur de configurer visuellement son application locale sans ligne de commande.
+    Gère la taille, l'accrochage au header (Y=0), l'alignement et les couleurs.
     """
     settings_changed = pyqtSignal(dict)
     state_trigger_requested = pyqtSignal(str)
@@ -50,7 +52,7 @@ class SettingsWindow(QWidget):
         self.settings = load_settings()
 
         self.setWindowTitle("Antigravity Control Center")
-        self.setFixedSize(480, 560)
+        self.setFixedSize(500, 640)
         self.setStyleSheet("""
             QWidget {
                 background-color: #0b0f19;
@@ -61,7 +63,7 @@ class SettingsWindow(QWidget):
                 background-color: #131b2e;
                 border: 1px solid #1e293b;
                 border-radius: 12px;
-                padding: 16px;
+                padding: 14px;
             }
             QLabel.title {
                 font-size: 18px;
@@ -73,11 +75,11 @@ class SettingsWindow(QWidget):
                 color: #94a3b8;
             }
             QLabel.section {
-                font-size: 13px;
-                font-weight: 600;
+                font-size: 12px;
+                font-weight: 700;
                 color: #38bdf8;
                 text-transform: uppercase;
-                letter-spacing: 0.5px;
+                letter-spacing: 0.6px;
             }
             QPushButton.primary {
                 background-color: #0284c7;
@@ -86,7 +88,7 @@ class SettingsWindow(QWidget):
                 font-size: 13px;
                 border: none;
                 border-radius: 8px;
-                padding: 10px 16px;
+                padding: 9px 16px;
             }
             QPushButton.primary:hover {
                 background-color: #0369a1;
@@ -98,18 +100,36 @@ class SettingsWindow(QWidget):
                 font-size: 12px;
                 border: 1px solid #334155;
                 border-radius: 6px;
-                padding: 7px 12px;
+                padding: 6px 10px;
             }
             QPushButton.secondary:hover {
                 background-color: #334155;
                 border-color: #475569;
             }
-            QPushButton.accent-btn {
-                border-radius: 15px;
-                border: 2px solid transparent;
+            QSlider::groove:horizontal {
+                height: 4px;
+                background: #1e293b;
+                border-radius: 2px;
             }
-            QPushButton.accent-btn:hover {
-                border-color: #ffffff;
+            QSlider::sub-page:horizontal {
+                background: #38bdf8;
+                border-radius: 2px;
+            }
+            QSlider::handle:horizontal {
+                background: #ffffff;
+                border: 1px solid #0284c7;
+                width: 14px;
+                margin-top: -5px;
+                margin-bottom: -5px;
+                border-radius: 7px;
+            }
+            QComboBox {
+                background-color: #1e293b;
+                border: 1px solid #334155;
+                border-radius: 6px;
+                padding: 5px 10px;
+                color: #ffffff;
+                font-size: 12px;
             }
         """)
 
@@ -117,81 +137,116 @@ class SettingsWindow(QWidget):
 
     def _build_ui(self):
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(24, 24, 24, 24)
-        main_layout.setSpacing(18)
+        main_layout.setContentsMargins(20, 20, 20, 20)
+        main_layout.setSpacing(14)
 
         # En-tête
         header_layout = QHBoxLayout()
         header_text = QVBoxLayout()
         title = QLabel("Antigravity Island")
         title.setProperty("class", "title")
-        subtitle = QLabel("Centre de contrôle & Paramètres locaux")
+        subtitle = QLabel("Design & Disposition de l'encoche")
         subtitle.setProperty("class", "subtitle")
         header_text.addWidget(title)
         header_text.addWidget(subtitle)
         header_layout.addLayout(header_text)
         header_layout.addStretch()
 
-        # Statut Serveur
-        status_badge = QLabel("  ● En ligne (8765)  ")
+        status_badge = QLabel("  ● Actif (8765)  ")
         status_badge.setStyleSheet("background-color: rgba(34, 197, 94, 0.15); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.3); border-radius: 12px; font-size: 11px; font-weight: 600; padding: 4px 8px;")
         header_layout.addWidget(status_badge)
         main_layout.addLayout(header_layout)
 
-        # Carte 1 : Contrôle de l'encoche
-        card1 = QFrame()
-        card1.setProperty("class", "card")
-        card1_layout = QVBoxLayout(card1)
-        card1_layout.setSpacing(12)
+        # CARTE 1 : Disposition & Accrochage au Header
+        card_disp = QFrame()
+        card_disp.setProperty("class", "card")
+        layout_disp = QVBoxLayout(card_disp)
+        layout_disp.setSpacing(10)
 
-        lbl1 = QLabel("Affichage & État de l'Encoche")
-        lbl1.setProperty("class", "section")
-        card1_layout.addWidget(lbl1)
+        lbl_disp = QLabel("Disposition & Fixation au Header")
+        lbl_disp.setProperty("class", "section")
+        layout_disp.addWidget(lbl_disp)
 
-        # Bouton Toggle Visibilité
-        toggle_layout = QHBoxLayout()
-        self.toggle_btn = QPushButton("Masquer l'encoche" if self.settings.get("island_visible") else "Afficher l'encoche")
-        self.toggle_btn.setProperty("class", "primary")
-        self.toggle_btn.clicked.connect(self._on_toggle_clicked)
-        toggle_layout.addWidget(self.toggle_btn)
-        card1_layout.addLayout(toggle_layout)
+        # Accrochage au bord (Notch collé vs Flottant)
+        row_pos = QHBoxLayout()
+        row_pos.addWidget(QLabel("Fixation :"))
+        row_pos.addStretch()
+        self.combo_mode = QComboBox()
+        self.combo_mode.addItems(["Collé au plus près du bord (Notch Y=0)", "Flottant (Capsule détachée)"])
+        if self.settings.get("position_mode") == "floating":
+            self.combo_mode.setCurrentIndex(1)
+        self.combo_mode.currentIndexChanged.connect(self._on_mode_changed)
+        row_pos.addWidget(self.combo_mode)
+        layout_disp.addLayout(row_pos)
 
-        # Tester les états en direct
-        lbl_tests = QLabel("Tester les états de l'île en un clic :")
-        lbl_tests.setStyleSheet("font-size: 12px; color: #94a3b8; margin-top: 4px;")
-        card1_layout.addWidget(lbl_tests)
+        # Alignement Horizontal
+        row_align = QHBoxLayout()
+        row_align.addWidget(QLabel("Alignement :"))
+        row_align.addStretch()
+        self.combo_align = QComboBox()
+        self.combo_align.addItems(["Centre (Recommandé)", "Gauche", "Droite"])
+        cur_align = self.settings.get("alignment", "center")
+        if cur_align == "left":
+            self.combo_align.setCurrentIndex(1)
+        elif cur_align == "right":
+            self.combo_align.setCurrentIndex(2)
+        self.combo_align.currentIndexChanged.connect(self._on_align_changed)
+        row_align.addWidget(self.combo_align)
+        layout_disp.addLayout(row_align)
 
-        btn_grid = QHBoxLayout()
-        btn_grid.setSpacing(6)
+        main_layout.addWidget(card_disp)
 
-        states = [
-            ("Repos", "idle"),
-            ("Écoute", "listening"),
-            ("Réflexion", "thinking"),
-            ("Parole", "speaking"),
-            ("Action", "action"),
-        ]
-        for label, st in states:
-            b = QPushButton(label)
-            b.setProperty("class", "secondary")
-            b.clicked.connect(lambda checked, s=st: self._trigger_state(s))
-            btn_grid.addWidget(b)
+        # CARTE 2 : Dimension de l'encoche
+        card_size = QFrame()
+        card_size.setProperty("class", "card")
+        layout_size = QVBoxLayout(card_size)
+        layout_size.setSpacing(10)
 
-        card1_layout.addLayout(btn_grid)
-        main_layout.addWidget(card1)
+        lbl_size = QLabel("Taille de l'Encoche au Repos")
+        lbl_size.setProperty("class", "section")
+        layout_size.addWidget(lbl_size)
 
-        # Carte 2 : Personnalisation Visuelle
-        card2 = QFrame()
-        card2.setProperty("class", "card")
-        card2_layout = QVBoxLayout(card2)
-        card2_layout.setSpacing(12)
+        # Largeur (Slider)
+        layout_w = QHBoxLayout()
+        layout_w.addWidget(QLabel("Largeur :"))
+        self.lbl_w_val = QLabel(f"{int(self.settings.get('idle_width', 110))} px")
+        self.lbl_w_val.setStyleSheet("color: #38bdf8; font-weight: bold; width: 45px;")
+        layout_w.addWidget(self.lbl_w_val)
+        self.slider_w = QSlider(Qt.Orientation.Horizontal)
+        self.slider_w.setRange(70, 220)
+        self.slider_w.setValue(int(self.settings.get("idle_width", 110)))
+        self.slider_w.valueChanged.connect(self._on_width_changed)
+        layout_w.addWidget(self.slider_w)
+        layout_size.addLayout(layout_w)
 
-        lbl2 = QLabel("Personnalisation de la Couleur")
-        lbl2.setProperty("class", "section")
-        card2_layout.addWidget(lbl2)
+        # Hauteur (Slider)
+        layout_h = QHBoxLayout()
+        layout_h.addWidget(QLabel("Hauteur :"))
+        self.lbl_h_val = QLabel(f"{int(self.settings.get('idle_height', 30))} px")
+        self.lbl_h_val.setStyleSheet("color: #38bdf8; font-weight: bold; width: 45px;")
+        layout_h.addWidget(self.lbl_h_val)
+        self.slider_h = QSlider(Qt.Orientation.Horizontal)
+        self.slider_h.setRange(22, 45)
+        self.slider_h.setValue(int(self.settings.get("idle_height", 30)))
+        self.slider_h.valueChanged.connect(self._on_height_changed)
+        layout_h.addWidget(self.slider_h)
+        layout_size.addLayout(layout_h)
 
+        main_layout.addWidget(card_size)
+
+        # CARTE 3 : Personnalisation Couleurs & Test
+        card_style = QFrame()
+        card_style.setProperty("class", "card")
+        layout_style = QVBoxLayout(card_style)
+        layout_style.setSpacing(10)
+
+        lbl_style = QLabel("Couleurs & Tests Rapides")
+        lbl_style.setProperty("class", "section")
+        layout_style.addWidget(lbl_style)
+
+        # Palette
         color_row = QHBoxLayout()
-        color_row.addWidget(QLabel("Palette préférée :"))
+        color_row.addWidget(QLabel("Couleur d'accent :"))
         color_row.addStretch()
 
         presets = [
@@ -204,69 +259,82 @@ class SettingsWindow(QWidget):
         ]
         for hex_code, name in presets:
             btn = QPushButton()
-            btn.setFixedSize(28, 28)
+            btn.setFixedSize(24, 24)
             btn.setProperty("class", "accent-btn")
             btn.setToolTip(name)
-            btn.setStyleSheet(f"background-color: {hex_code}; border-radius: 14px;")
+            btn.setStyleSheet(f"background-color: {hex_code}; border-radius: 12px; border: 1px solid rgba(255,255,255,0.2);")
             btn.clicked.connect(lambda checked, c=hex_code: self._set_accent_color(c))
             color_row.addWidget(btn)
 
-        # Bouton Sélecteur Libre
-        custom_color_btn = QPushButton("Personnaliser...")
-        custom_color_btn.setProperty("class", "secondary")
-        custom_color_btn.clicked.connect(self._pick_custom_color)
-        color_row.addWidget(custom_color_btn)
+        btn_pick = QPushButton("Libre...")
+        btn_pick.setProperty("class", "secondary")
+        btn_pick.clicked.connect(self._pick_custom_color)
+        color_row.addWidget(btn_pick)
+        layout_style.addLayout(color_row)
 
-        card2_layout.addLayout(color_row)
+        # Boutons de test d'états
+        test_row = QHBoxLayout()
+        test_row.setSpacing(4)
+        states = [
+            ("Repos", "idle"),
+            ("Écoute", "listening"),
+            ("Réflexion", "thinking"),
+            ("Parole", "speaking"),
+            ("Action", "action"),
+        ]
+        for label, st in states:
+            b = QPushButton(label)
+            b.setProperty("class", "secondary")
+            b.clicked.connect(lambda checked, s=st: self.state_trigger_requested.emit(s))
+            test_row.addWidget(b)
+        layout_style.addLayout(test_row)
 
-        # Mode de position (Collé vs Flottant)
-        pos_row = QHBoxLayout()
-        pos_row.addWidget(QLabel("Positionnement :"))
-        pos_row.addStretch()
-        self.pos_combo = QComboBox()
-        self.pos_combo.addItems(["Collée en haut (Notch)", "Flottante (Capsule)"])
-        if self.settings.get("position_mode") == "floating":
-            self.pos_combo.setCurrentIndex(1)
-        self.pos_combo.setStyleSheet("""
-            QComboBox {
-                background-color: #1e293b;
-                border: 1px solid #334155;
-                border-radius: 6px;
-                padding: 5px 12px;
-                color: #ffffff;
-                font-size: 12px;
-            }
-        """)
-        self.pos_combo.currentIndexChanged.connect(self._on_pos_changed)
-        pos_row.addWidget(self.pos_combo)
-        card2_layout.addLayout(pos_row)
+        main_layout.addWidget(card_style)
 
-        main_layout.addWidget(card2)
+        # Bouton Afficher / Masquer
+        self.toggle_btn = QPushButton("Masquer l'encoche" if self.settings.get("island_visible") else "Afficher l'encoche")
+        self.toggle_btn.setProperty("class", "primary")
+        self.toggle_btn.clicked.connect(self._on_toggle_clicked)
+        main_layout.addWidget(self.toggle_btn)
+
         main_layout.addStretch()
 
         # Pied de page
         footer_layout = QHBoxLayout()
-        footer_lbl = QLabel("Antigravity Island v0.1.0 • Prêt pour connexion MCP")
+        footer_lbl = QLabel("Antigravity Island • 0 px gap header")
         footer_lbl.setStyleSheet("font-size: 11px; color: #64748b;")
         footer_layout.addWidget(footer_lbl)
         footer_layout.addStretch()
 
-        quit_btn = QPushButton("Quitter l'application")
+        quit_btn = QPushButton("Quitter")
         quit_btn.setStyleSheet("background: transparent; color: #ef4444; border: none; font-size: 12px;")
-        quit_btn.clicked.connect(self._quit_app)
+        quit_btn.clicked.connect(lambda: QApplication.quit())
         footer_layout.addWidget(quit_btn)
-
         main_layout.addLayout(footer_layout)
 
-    def _on_toggle_clicked(self):
-        new_val = not self.settings.get("island_visible", True)
-        self.settings["island_visible"] = new_val
+    def _on_mode_changed(self, idx: int):
+        mode = "floating" if idx == 1 else "notch"
+        self.settings["position_mode"] = mode
         save_settings(self.settings)
-        self.toggle_btn.setText("Masquer l'encoche" if new_val else "Afficher l'encoche")
-        self.toggle_island_requested.emit(new_val)
+        self.settings_changed.emit(self.settings)
 
-    def _trigger_state(self, state: str):
-        self.state_trigger_requested.emit(state)
+    def _on_align_changed(self, idx: int):
+        align_map = {0: "center", 1: "left", 2: "right"}
+        self.settings["alignment"] = align_map.get(idx, "center")
+        save_settings(self.settings)
+        self.settings_changed.emit(self.settings)
+
+    def _on_width_changed(self, val: int):
+        self.lbl_w_val.setText(f"{val} px")
+        self.settings["idle_width"] = val
+        save_settings(self.settings)
+        self.settings_changed.emit(self.settings)
+
+    def _on_height_changed(self, val: int):
+        self.lbl_h_val.setText(f"{val} px")
+        self.settings["idle_height"] = val
+        save_settings(self.settings)
+        self.settings_changed.emit(self.settings)
 
     def _set_accent_color(self, hex_color: str):
         self.settings["accent_color"] = hex_color
@@ -274,16 +342,13 @@ class SettingsWindow(QWidget):
         self.settings_changed.emit(self.settings)
 
     def _pick_custom_color(self):
-        col = QColorDialog.getColor(QColor(self.settings.get("accent_color", "#38bdf8")), self, "Choisir une couleur d'accent")
+        col = QColorDialog.getColor(QColor(self.settings.get("accent_color", "#38bdf8")), self, "Choisir une couleur")
         if col.isValid():
             self._set_accent_color(col.name())
 
-    def _on_pos_changed(self, idx: int):
-        mode = "floating" if idx == 1 else "top"
-        self.settings["position_mode"] = mode
+    def _on_toggle_clicked(self):
+        new_val = not self.settings.get("island_visible", True)
+        self.settings["island_visible"] = new_val
         save_settings(self.settings)
-        self.settings_changed.emit(self.settings)
-
-    def _quit_app(self):
-        from PyQt6.QtWidgets import QApplication
-        QApplication.quit()
+        self.toggle_btn.setText("Masquer l'encoche" if new_val else "Afficher l'encoche")
+        self.toggle_island_requested.emit(new_val)
