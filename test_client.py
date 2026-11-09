@@ -1,6 +1,9 @@
 import asyncio
 import json
+import sys
 import websockets
+
+sys.stdout.reconfigure(encoding='utf-8')
 
 async def run_demo():
     uri = "ws://127.0.0.1:8765"
