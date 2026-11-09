@@ -47,11 +47,20 @@
   - Centre de contrôle avec sliders de taille, alignement, styles et contraste élevé.
 - [x] **Raccourci Global Push-to-Talk** :
   - Détection OS globale des touches `Win + Alt` (mode hybride tap court = toggle / maintien = push-to-talk).
-- [x] **Organes HeyClicky intégrés** :
+- [x] **Organes HeyClicky & Computer Use intégrés** :
   - Vision instantanée MSS : `island_capture_screen()`.
   - Pointeur laser virtuel click-through : `island_point_at(x, y, label)`.
-- [x] **Serveur MCP Enregistré** :
-  - Outils `island_speak`, `island_action`, `island_point_at`, `island_capture_screen`, `island_get_screen_info`, `island_set_style`, `island_idle`, `island_set_state`, `island_audio_pulse`.
+  - Détection OCR native Windows 10/11 sans dépendance : `island_find_elements(query)`.
+  - Contrôle souris fluide Bézier (courbe cubique + easing) : `island_click(x, y)`, `island_move_cursor(x, y)`.
+  - Clic automatique par recherche d'élément : `island_click_element(query)`.
+  - Saisie clavier Unicode (accents complets) : `island_type(text)`.
+  - Combinaisons de touches : `island_press_key(key)`.
+  - Défilement molette : `island_scroll(amount)`.
+- [x] **Serveur MCP Complet & Enregistré** :
+  - Outils `island_find_elements`, `island_click`, `island_click_element`, `island_type`, `island_press_key`, `island_scroll`, `island_move_cursor`, `island_speak`, `island_action`, `island_point_at`, `island_capture_screen`, `island_get_screen_info`, `island_set_style`, `island_idle`, `island_set_state`, `island_audio_pulse`.
+- [x] **Démarrage Automatique & Multi-Écrans** :
+  - Clé de registre Windows Run configurée et testée via le Centre de Contrôle.
+  - Sélecteur de moniteur avec détection dynamique de résolution.
 
 ---
 
