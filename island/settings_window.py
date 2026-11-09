@@ -1,14 +1,51 @@
 import sys
 import json
 import os
+import winreg
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, 
-    QFrame, QSlider, QComboBox, QSystemTrayIcon, QMenu, QColorDialog, QScrollArea
+    QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, 
+    QFrame, QSlider, QComboBox, QSystemTrayIcon, QMenu, QColorDialog, QScrollArea, QCheckBox
 )
 from PyQt6.QtGui import QIcon, QColor, QFont, QPixmap, QPainter, QBrush
 
 from island.config import Config
+
+REG_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
+APP_NAME = "AntigravityIsland"
+
+def is_autostart_enabled() -> bool:
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, REG_KEY, 0, winreg.KEY_READ) as key:
+            winreg.QueryValueEx(key, APP_NAME)
+            return True
+    except Exception:
+        return False
+
+def set_autostart(enable: bool) -> bool:
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, REG_KEY, 0, winreg.KEY_SET_VALUE) as key:
+            if enable:
+                if getattr(sys, "frozen", False):
+                    exe_path = sys.executable
+                else:
+                    desktop_exe = os.path.join(os.path.expanduser("~"), "Desktop", "AntigravityIsland", "AntigravityIsland.exe")
+                    if os.path.exists(desktop_exe):
+                        exe_path = desktop_exe
+                    else:
+                        exe_path = os.path.abspath(sys.argv[0])
+                winreg.SetValueEx(key, APP_NAME, 0, winreg.REG_SZ, f'"{exe_path}"')
+                print(f"[Autostart] Enregistre dans Windows Run : {exe_path}")
+            else:
+                try:
+                    winreg.DeleteValue(key, APP_NAME)
+                    print("[Autostart] Supprime de Windows Run")
+                except FileNotFoundError:
+                    pass
+            return True
+    except Exception as e:
+        print("[Autostart] Erreur registre Windows :", e)
+        return False
 
 def get_settings_file_path():
     """Chemin de configuration permanent et persistant dans le profil utilisateur Windows."""
@@ -29,6 +66,8 @@ def load_settings():
         "idle_height": 30,           # Hauteur au repos
         "island_visible": True,
         "ptt_mode": "hybrid",        # "hybrid", "hold", "toggle"
+        "autostart": is_autostart_enabled(),
+        "screen_index": 0,
     }
     settings_path = get_settings_file_path()
     if os.path.exists(settings_path):
@@ -291,6 +330,22 @@ class SettingsWindow(QWidget):
         row_align.addWidget(self.combo_align)
         layout_disp.addLayout(row_align)
 
+        # Choix de l'Écran (Multi-Moniteurs)
+        row_screen = QHBoxLayout()
+        row_screen.addWidget(QLabel("Écran d'affichage :"))
+        row_screen.addStretch()
+        self.combo_screen = QComboBox()
+        screens = QApplication.screens()
+        for i, sc in enumerate(screens):
+            geo = sc.geometry()
+            self.combo_screen.addItem(f"Écran {i+1} ({geo.width()}x{geo.height()})")
+        cur_sc = int(self.settings.get("screen_index", 0))
+        if 0 <= cur_sc < len(screens):
+            self.combo_screen.setCurrentIndex(cur_sc)
+        self.combo_screen.currentIndexChanged.connect(self._on_screen_changed)
+        row_screen.addWidget(self.combo_screen)
+        layout_disp.addLayout(row_screen)
+
         content_layout.addWidget(card_disp)
 
         # CARTE 2 : Dimension de l'encoche
@@ -433,6 +488,40 @@ class SettingsWindow(QWidget):
 
         content_layout.addWidget(card_ptt)
 
+        # CARTE 5 : Système & Démarrage Automatique
+        card_sys = QFrame()
+        card_sys.setProperty("class", "card")
+        layout_sys = QVBoxLayout(card_sys)
+        layout_sys.setSpacing(10)
+
+        lbl_sys = QLabel("Système & Démarrage")
+        lbl_sys.setProperty("class", "section")
+        layout_sys.addWidget(lbl_sys)
+
+        row_boot = QHBoxLayout()
+        row_boot.addWidget(QLabel("Lancer au démarrage de Windows :"))
+        row_boot.addStretch()
+        self.check_autostart = QCheckBox()
+        self.check_autostart.setChecked(is_autostart_enabled())
+        self.check_autostart.setStyleSheet("""
+            QCheckBox::indicator {
+                width: 18px;
+                height: 18px;
+                border-radius: 4px;
+                border: 1px solid #475569;
+                background-color: #1e293b;
+            }
+            QCheckBox::indicator:checked {
+                background-color: #0284c7;
+                border-color: #38bdf8;
+            }
+        """)
+        self.check_autostart.toggled.connect(self._on_autostart_toggled)
+        row_boot.addWidget(self.check_autostart)
+        layout_sys.addLayout(row_boot)
+
+        content_layout.addWidget(card_sys)
+
         scroll.setWidget(scroll_content)
         main_layout.addWidget(scroll, 1)
 
@@ -509,6 +598,16 @@ class SettingsWindow(QWidget):
         self.settings["ptt_mode"] = modes[idx] if idx < len(modes) else "hybrid"
         save_settings(self.settings)
         self.settings_changed.emit(self.settings)
+
+    def _on_screen_changed(self, idx: int):
+        self.settings["screen_index"] = idx
+        save_settings(self.settings)
+        self.settings_changed.emit(self.settings)
+
+    def _on_autostart_toggled(self, checked: bool):
+        set_autostart(checked)
+        self.settings["autostart"] = checked
+        save_settings(self.settings)
 
     def _on_toggle_clicked(self):
         new_val = not self.settings.get("island_visible", True)

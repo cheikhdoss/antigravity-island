@@ -88,16 +88,28 @@ class PushToTalkEngine:
                 print("[PushToTalk] Combinaison [Windows + Alt] pressee...")
                 self.window.state_change_requested.emit("set_state", {"state": "listening"})
 
+    def _trigger_thinking_and_capture(self):
+        self.window.state_change_requested.emit("set_state", {"state": "thinking"})
+        threading.Thread(target=self._capture_screen_async, daemon=True).start()
+
+    def _capture_screen_async(self):
+        try:
+            from island.vision import capture_screen
+            capture_screen()
+            print("[PushToTalk] Capture d'ecran automatique effectuee en arriere-plan (screen_latest.png)")
+        except Exception as e:
+            print("[PushToTalk] Erreur capture d'ecran:", e)
+
     def _handle_combo_up(self, duration: float):
         if self.mode == "hold":
             self.is_active = False
             print(f"[PushToTalk] Relachement apres {duration:.2f}s -> Passage en Analyse...")
-            self.window.state_change_requested.emit("set_state", {"state": "thinking"})
+            self._trigger_thinking_and_capture()
         elif self.mode == "toggle":
             if self.is_active:
                 self.is_active = False
                 print("[PushToTalk] Bascule off -> Passage en Analyse...")
-                self.window.state_change_requested.emit("set_state", {"state": "thinking"})
+                self._trigger_thinking_and_capture()
             else:
                 self.is_active = True
                 print("[PushToTalk] Bascule on -> Mode Ecoute...")
@@ -108,7 +120,7 @@ class PushToTalkEngine:
                 if self.is_active:
                     self.is_active = False
                     print("[PushToTalk] Tap court -> Fin d'ecoute, Analyse...")
-                    self.window.state_change_requested.emit("set_state", {"state": "thinking"})
+                    self._trigger_thinking_and_capture()
                 else:
                     self.is_active = True
                     print("[PushToTalk] Tap court -> Activation mode Ecoute...")
@@ -117,4 +129,4 @@ class PushToTalkEngine:
                 # Maintien long : Push-to-Talk
                 self.is_active = False
                 print(f"[PushToTalk] Relachement maintien ({duration:.2f}s) -> Analyse...")
-                self.window.state_change_requested.emit("set_state", {"state": "thinking"})
+                self._trigger_thinking_and_capture()

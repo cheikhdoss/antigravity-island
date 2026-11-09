@@ -88,6 +88,7 @@ class IslandWindow(QWidget):
         self.style_mode = "island"      # "island" (pilule) ou "iphonex" (encoche iPhone X)
         self.position_mode = "notch"   # "notch" (collé au header à Y=0) ou "floating"
         self.alignment = "center"       # "center", "left", "right"
+        self.screen_index = 0           # Index de l'écran cible (Multi-Moniteurs)
         self.top_margin = 0
         self.accent_color = Config.COLOR_ACCENT_CYAN
 
@@ -130,6 +131,8 @@ class IslandWindow(QWidget):
             self.top_margin = 0 if self.position_mode == "notch" else 12
         if "alignment" in settings:
             self.alignment = settings["alignment"]
+        if "screen_index" in settings:
+            self.screen_index = int(settings["screen_index"])
         if "idle_width" in settings:
             self.custom_idle_w = float(settings["idle_width"])
         if "idle_height" in settings:
@@ -201,7 +204,11 @@ class IslandWindow(QWidget):
         self.update()
 
     def _update_geometry(self):
-        screen = QApplication.primaryScreen()
+        screens = QApplication.screens()
+        if screens and 0 <= self.screen_index < len(screens):
+            screen = screens[self.screen_index]
+        else:
+            screen = QApplication.primaryScreen()
         if not screen:
             return
         screen_geo = screen.geometry()
