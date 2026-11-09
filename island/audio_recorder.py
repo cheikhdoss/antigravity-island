@@ -30,7 +30,6 @@ class AudioRecorder:
             self.winmm.mciSendStringW(f"set {self.alias} samplespersec 16000", None, 0, None)
             self.winmm.mciSendStringW(f"set {self.alias} bitspersample 16", None, 0, None)
             self.winmm.mciSendStringW(f"set {self.alias} alignment 2", None, 0, None)
-            self.winmm.mciSendStringW(f"set {self.alias} bytespersec 32000", None, 0, None)
             
             # Lancer l'enregistrement
             res_rec = self.winmm.mciSendStringW(f"record {self.alias}", None, 0, None)
@@ -49,6 +48,11 @@ class AudioRecorder:
             self.winmm.mciSendStringW(f"stop {self.alias}", None, 0, None)
             abs_path = os.path.abspath(output_path)
             os.makedirs(os.path.dirname(abs_path), exist_ok=True)
+            if os.path.exists(abs_path):
+                try:
+                    os.remove(abs_path)
+                except Exception:
+                    pass
             
             res_save = self.winmm.mciSendStringW(f'save {self.alias} "{abs_path}"', None, 0, None)
             self.winmm.mciSendStringW(f"close {self.alias}", None, 0, None)

@@ -120,7 +120,14 @@ def find_screen_elements(query: str = "", image_path: str = None) -> list:
         if query:
             cmd.extend(["-SearchQuery", query])
 
-        res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", timeout=6)
+        res = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=6,
+            creationflags=0x08000000  # CREATE_NO_WINDOW : empêche totalement la console PowerShell d'apparaître
+        )
         out = res.stdout.strip()
         if not out:
             return []

@@ -50,7 +50,14 @@ def transcribe_audio(audio_path: str) -> str:
             "-File", PS_STT_SCRIPT,
             "-AudioPath", os.path.abspath(audio_path)
         ]
-        res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", timeout=10)
+        res = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=10,
+            creationflags=0x08000000  # CREATE_NO_WINDOW : empêche totalement la fenêtre de terminal de s'ouvrir
+        )
         return res.stdout.strip()
     except Exception as e:
         print("[STT] Erreur transcription audio:", e)

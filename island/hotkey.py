@@ -144,11 +144,13 @@ class PushToTalkEngine:
         # 5. Affichage visuel sur l'encoche
         if transcription:
             self.window.state_change_requested.emit("speak", {"text": f"Reçu : {transcription}"})
-            time.sleep(3.0)
+            time.sleep(3.2)
             self.window.state_change_requested.emit("set_state", {"state": "idle"})
         else:
-            # Pas de parole distincte détectée -> retour fluide au repos
-            time.sleep(1.8)
+            # Si aucun mot n'a été transcrit mais que l'audio/capture a été pris
+            msg = "Capture enregistrée" if has_audio else "Aucun son capté"
+            self.window.state_change_requested.emit("speak", {"text": msg})
+            time.sleep(2.0)
             self.window.state_change_requested.emit("set_state", {"state": "idle"})
 
     def _handle_combo_up(self, duration: float):
@@ -166,7 +168,7 @@ class PushToTalkEngine:
                 print("[PushToTalk] Bascule on -> Mode Ecoute...")
                 self.window.state_change_requested.emit("set_state", {"state": "listening"})
         else:  # hybrid
-            if duration < 0.40:
+            if duration < 0.30:
                 # Tap court : bascule
                 if self.is_active:
                     self.is_active = False
