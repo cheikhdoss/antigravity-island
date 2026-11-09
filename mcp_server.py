@@ -116,6 +116,14 @@ async def island_get_screen_info() -> str:
     return json.dumps(res, ensure_ascii=False)
 
 @mcp.tool()
+async def island_get_last_query() -> str:
+    """
+    Récupère la dernière requête vocale enregistrée et transcrite depuis le microphone par le raccourci Win + Alt.
+    """
+    res = await send_command_to_island({"action": "get_last_query"})
+    return json.dumps(res, ensure_ascii=False)
+
+@mcp.tool()
 async def island_audio_pulse(power: float = 0.5) -> str:
     """
     Anime le visualiseur d'ondes audio sur l'encoche (valeur entre 0.0 et 1.0).

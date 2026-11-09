@@ -3,7 +3,7 @@ import math
 from PyQt6.QtCore import (
     Qt, QRectF, QPointF, QTimer, QVariantAnimation, QEasingCurve, pyqtSignal
 )
-from PyQt6.QtWidgets import QWidget, QApplication
+from PyQt6.QtWidgets import QWidget, QApplication, QMenu
 from PyQt6.QtGui import (
     QPainter, QColor, QPen, QBrush, QFont, QLinearGradient, QPainterPath, QRadialGradient
 )
@@ -12,6 +12,7 @@ from island.config import Config
 from island.components.waveform import WaveformVisualizer
 from island.components.glowing_orb import GlowingOrb
 from island.pointer import PointerOverlay
+from island.voice import VoiceEngine
 
 def create_iphone_x_notch_path(x: float, y: float, w: float, h: float, r_bottom: float = 14.0, r_ear: float = 8.0) -> QPainterPath:
     """Génère la forme géométrique authentique d'une encoche style iPhone X / MacBook avec cornes concaves."""
@@ -103,6 +104,11 @@ class IslandWindow(QWidget):
         self.orb = GlowingOrb()
         self.audio_power = 0.0
         self.idle_pulse = 0.0
+
+        # Composants vocaux et contrôle
+        self.settings_window = None
+        self.voice_enabled = True
+        self.voice_engine = VoiceEngine(window_instance=self)
 
         # Animation morphique
         self.anim = QVariantAnimation(self)
@@ -248,6 +254,12 @@ class IslandWindow(QWidget):
         elif action == "speak":
             self.message_text = data.get("text", "")
             self.set_state("speaking", data)
+            if getattr(self, "voice_enabled", True):
+                import time
+                def on_done():
+                    time.sleep(1.2)
+                    self.state_change_requested.emit("idle", {})
+                self.voice_engine.speak(self.message_text, callback_on_finish=on_done)
         elif action == "audio_power":
             self.audio_power = float(data.get("power", 0.0))
         elif action == "action":
@@ -269,12 +281,45 @@ class IslandWindow(QWidget):
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
-            states_order = ["idle", "listening", "thinking", "speaking", "action"]
-            idx = states_order.index(self.current_state)
-            next_state = states_order[(idx + 1) % len(states_order)]
-            self.set_state(next_state)
+            # En mode réel : clic gauche ouvre / met en avant le Centre de contrôle
+            if getattr(self, "settings_window", None):
+                if self.settings_window.isVisible():
+                    self.settings_window.hide()
+                else:
+                    self.settings_window.show()
+                    self.settings_window.raise_()
+                    self.settings_window.activateWindow()
         elif event.button() == Qt.MouseButton.RightButton:
-            self.set_state("idle")
+            # Menu contextuel au clic droit
+            menu = QMenu(self)
+            menu.setStyleSheet("""
+                QMenu {
+                    background-color: #0b1120;
+                    color: #ffffff;
+                    border: 1px solid rgba(255, 255, 255, 0.15);
+                    border-radius: 8px;
+                    padding: 4px;
+                    font-family: 'Segoe UI';
+                    font-size: 12px;
+                }
+                QMenu::item {
+                    padding: 6px 18px;
+                    border-radius: 4px;
+                }
+                QMenu::item:selected {
+                    background-color: #38bdf8;
+                    color: #000000;
+                    font-weight: bold;
+                }
+            """)
+            act_settings = menu.addAction("Centre de contrôle...")
+            act_settings.triggered.connect(lambda: getattr(self, "settings_window", None) and (self.settings_window.show(), self.settings_window.raise_(), self.settings_window.activateWindow()))
+            act_idle = menu.addAction("Remettre au repos (Idle)")
+            act_idle.triggered.connect(lambda: self.set_state("idle"))
+            menu.addSeparator()
+            act_quit = menu.addAction("Quitter Antigravity Island")
+            act_quit.triggered.connect(QApplication.instance().quit)
+            menu.exec(event.globalPosition().toPoint())
 
     def paintEvent(self, event):
         painter = QPainter(self)

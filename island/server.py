@@ -48,6 +48,17 @@ class IslandWebSocketServer:
                             info = get_screens_info()
                             await websocket.send(json.dumps(info, ensure_ascii=False))
                             continue
+                        elif action == "get_last_query":
+                            import os
+                            appdata_dir = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "AntigravityIsland")
+                            query_file = os.path.join(appdata_dir, "last_voice_query.json")
+                            if os.path.exists(query_file):
+                                with open(query_file, "r", encoding="utf-8") as f:
+                                    qdata = json.load(f)
+                                await websocket.send(json.dumps({"status": "success", "query": qdata}, ensure_ascii=False))
+                            else:
+                                await websocket.send(json.dumps({"status": "empty", "message": "Aucune requête vocale récente"}, ensure_ascii=False))
+                            continue
                         elif action == "find_elements":
                             from island.ocr import find_screen_elements
                             query = data.get("query", "")

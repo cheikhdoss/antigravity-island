@@ -58,6 +58,7 @@ def main():
 
     # 3. Fenêtre de contrôle & Réglages (Centre de contrôle de l'application)
     control_center = SettingsWindow(island_window=island)
+    island.settings_window = control_center
     control_center.show()
 
     # Lier les signaux du centre de contrôle à l'île
