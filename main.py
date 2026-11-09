@@ -21,6 +21,7 @@ from PyQt6.QtCore import Qt
 from island.window import IslandWindow
 from island.settings_window import SettingsWindow, load_settings
 from island.server import IslandWebSocketServer
+from island.hotkey import PushToTalkEngine
 
 def create_tray_icon():
     """Crée une icône pour la barre des tâches système Windows (System Tray)."""
@@ -68,7 +69,12 @@ def main():
     server = IslandWebSocketServer(island)
     server.start()
 
-    # 5. Icône dans la zone de notification Windows (System Tray)
+    # 5. Moteur Push-to-Talk global (Raccourci Windows + Alt)
+    ptt_engine = PushToTalkEngine(window_instance=island, mode=user_settings.get("ptt_mode", "hybrid"))
+    ptt_engine.start()
+    control_center.settings_changed.connect(lambda s: ptt_engine.set_mode(s.get("ptt_mode", "hybrid")))
+
+    # 6. Icône dans la zone de notification Windows (System Tray)
     tray = QSystemTrayIcon(create_tray_icon(), app)
     tray_menu = QMenu()
 

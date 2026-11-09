@@ -21,6 +21,7 @@ def load_settings():
         "idle_width": 110,           # Largeur au repos
         "idle_height": 30,           # Hauteur au repos
         "island_visible": True,
+        "ptt_mode": "hybrid",        # "hybrid", "hold", "toggle"
     }
     if os.path.exists(SETTINGS_FILE):
         try:
@@ -53,7 +54,7 @@ class SettingsWindow(QWidget):
         self.settings = load_settings()
 
         self.setWindowTitle("Antigravity Control Center")
-        self.setFixedSize(500, 640)
+        self.setFixedSize(520, 730)
         self.setStyleSheet("""
             QWidget {
                 background-color: #0b0f19;
@@ -304,6 +305,51 @@ class SettingsWindow(QWidget):
 
         main_layout.addWidget(card_style)
 
+        # CARTE 4 : Raccourci Global Push-to-Talk (Windows + Alt)
+        card_ptt = QFrame()
+        card_ptt.setProperty("class", "card")
+        layout_ptt = QVBoxLayout(card_ptt)
+        layout_ptt.setSpacing(10)
+
+        lbl_ptt = QLabel("Raccourci Clavier Global (Push-to-Talk)")
+        lbl_ptt.setProperty("class", "section")
+        layout_ptt.addWidget(lbl_ptt)
+
+        # Touches matérielles détectées
+        row_keys = QHBoxLayout()
+        row_keys.addWidget(QLabel("Touches d'activation :"))
+        row_keys.addStretch()
+        
+        badge_win = QLabel(" Win ")
+        badge_win.setStyleSheet("background: #0284c7; color: #fff; font-weight: bold; border-radius: 4px; padding: 3px 8px; font-size: 11px;")
+        badge_plus = QLabel("+")
+        badge_plus.setStyleSheet("color: #94a3b8; font-weight: bold;")
+        badge_alt = QLabel(" Alt ")
+        badge_alt.setStyleSheet("background: #0284c7; color: #fff; font-weight: bold; border-radius: 4px; padding: 3px 8px; font-size: 11px;")
+        
+        row_keys.addWidget(badge_win)
+        row_keys.addWidget(badge_plus)
+        row_keys.addWidget(badge_alt)
+        layout_ptt.addLayout(row_keys)
+
+        # Mode Push-to-Talk
+        row_ptt_mode = QHBoxLayout()
+        row_ptt_mode.addWidget(QLabel("Comportement :"))
+        row_ptt_mode.addStretch()
+        self.combo_ptt = QComboBox()
+        self.combo_ptt.addItems([
+            "Hybride (Tap court = Bascule, Maintien = Parler)",
+            "Maintien enfonce (Push-to-Talk pur)",
+            "Bascule on/off (Toggle)"
+        ])
+        mode_map = {"hybrid": 0, "hold": 1, "toggle": 2}
+        self.combo_ptt.setCurrentIndex(mode_map.get(self.settings.get("ptt_mode", "hybrid"), 0))
+        self.combo_ptt.currentIndexChanged.connect(self._on_ptt_mode_changed)
+        row_ptt_mode.addWidget(self.combo_ptt)
+        layout_ptt.addLayout(row_ptt_mode)
+
+        main_layout.addWidget(card_ptt)
+
         # Bouton Afficher / Masquer
         self.toggle_btn = QPushButton("Masquer l'encoche" if self.settings.get("island_visible") else "Afficher l'encoche")
         self.toggle_btn.setProperty("class", "primary")
@@ -373,6 +419,12 @@ class SettingsWindow(QWidget):
         col = QColorDialog.getColor(QColor(self.settings.get("accent_color", "#38bdf8")), self, "Choisir une couleur")
         if col.isValid():
             self._set_accent_color(col.name())
+
+    def _on_ptt_mode_changed(self, idx: int):
+        modes = ["hybrid", "hold", "toggle"]
+        self.settings["ptt_mode"] = modes[idx] if idx < len(modes) else "hybrid"
+        save_settings(self.settings)
+        self.settings_changed.emit(self.settings)
 
     def _on_toggle_clicked(self):
         new_val = not self.settings.get("island_visible", True)
