@@ -141,9 +141,11 @@ class PushToTalkEngine:
         except Exception:
             pass
 
-        # 5. Réponse visuelle et vocale sur l'encoche
+        # 5. Affichage visuel sur l'encoche
         if transcription:
             self.window.state_change_requested.emit("speak", {"text": f"Reçu : {transcription}"})
+            time.sleep(3.0)
+            self.window.state_change_requested.emit("set_state", {"state": "idle"})
         else:
             # Pas de parole distincte détectée -> retour fluide au repos
             time.sleep(1.8)

@@ -9,7 +9,7 @@ class VoiceEngine:
     """
     def __init__(self, window_instance=None):
         self.window = window_instance
-        self.enabled = True
+        self.enabled = False  # Désactivé par défaut pour éviter la voix robotique Windows SAPI
         self.speaker = None
         self._lock = threading.Lock()
         self._speaking_thread = None

@@ -107,7 +107,7 @@ class IslandWindow(QWidget):
 
         # Composants vocaux et contrôle
         self.settings_window = None
-        self.voice_enabled = True
+        self.voice_enabled = False  # Désactivé : la voix officielle provient du mode Voice Call d'Antigravity
         self.voice_engine = VoiceEngine(window_instance=self)
 
         # Animation morphique
