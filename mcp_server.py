@@ -123,5 +123,133 @@ async def island_audio_pulse(power: float = 0.5) -> str:
     res = await send_command_to_island({"action": "audio_power", "power": power})
     return json.dumps(res, ensure_ascii=False)
 
+@mcp.tool()
+async def island_find_elements(query: str = "", image_path: str = "") -> str:
+    """
+    Détecte les éléments de texte et boutons affichés à l'écran via l'OCR haute performance natif Windows.
+    Retourne la liste des éléments correspondants avec leurs coordonnées exactes (center_x, center_y, width, height).
+    - query : Texte ou mot-clé à rechercher à l'écran (ex: 'Enregistrer', 'Paramètres', 'Fermer', 'GitHub'). Si vide, retourne tous les textes détectés.
+    - image_path : Chemin optionnel d'une capture d'écran PNG. Si non spécifié, prend une capture instantanée automatique.
+    """
+    payload = {"action": "find_elements", "query": query}
+    if image_path:
+        payload["image_path"] = image_path
+    res = await send_command_to_island(payload)
+    return json.dumps(res, ensure_ascii=False)
+
+@mcp.tool()
+async def island_click(x: int, y: int, button: str = "left", double: bool = False, smooth: bool = True) -> str:
+    """
+    Déplace la souris et clique sur une position spécifique de l'écran Windows.
+    - x : Coordonnée X en pixels
+    - y : Coordonnée Y en pixels
+    - button : 'left' (gauche), 'right' (droit) ou 'middle' (molette)
+    - double : True pour effectuer un double-clic
+    - smooth : True pour utiliser un vol de curseur fluide le long d'une courbe de Bézier naturelle (recommandé)
+    """
+    res = await send_command_to_island({
+        "action": "click",
+        "x": x,
+        "y": y,
+        "button": button,
+        "double": double,
+        "smooth": smooth
+    })
+    return json.dumps(res, ensure_ascii=False)
+
+@mcp.tool()
+async def island_click_element(query: str, button: str = "left", double: bool = False) -> str:
+    """
+    Localise automatiquement un texte ou bouton à l'écran par OCR et clique dessus directement.
+    - query : Texte du bouton ou label à cliquer (ex: 'Annuler', 'Se connecter', 'Envoyer')
+    - button : 'left' (gauche) ou 'right' (droit)
+    - double : True pour double-cliquer
+    """
+    ocr_res = await send_command_to_island({"action": "find_elements", "query": query})
+    if ocr_res.get("status") != "success" or not ocr_res.get("elements"):
+        return json.dumps({
+            "status": "error",
+            "message": f"Élément introuvable à l'écran pour la recherche '{query}'."
+        }, ensure_ascii=False)
+    
+    first = ocr_res["elements"][0]
+    cx = first.get("center_x")
+    cy = first.get("center_y")
+
+    # Mettre l'encoche en mode action et pointer brièvement
+    await send_command_to_island({
+        "action": "point_at",
+        "x": cx,
+        "y": cy,
+        "label": f"Clic sur {first.get('text', query)[:25]}",
+        "duration": 1.2
+    })
+
+    # Clic fluide
+    res = await send_command_to_island({
+        "action": "click",
+        "x": cx,
+        "y": cy,
+        "button": button,
+        "double": double,
+        "smooth": True
+    })
+    res["clicked_element"] = first
+    return json.dumps(res, ensure_ascii=False)
+
+@mcp.tool()
+async def island_move_cursor(x: int, y: int, duration: float = 0.35) -> str:
+    """
+    Déplace fluidement le curseur de souris Windows vers une cible le long d'une courbe de Bézier avec amorti.
+    - x : Coordonnée X en pixels
+    - y : Coordonnée Y en pixels
+    - duration : Durée du déplacement en secondes (défaut: 0.35s)
+    """
+    res = await send_command_to_island({
+        "action": "move_cursor",
+        "x": x,
+        "y": y,
+        "duration": duration
+    })
+    return json.dumps(res, ensure_ascii=False)
+
+@mcp.tool()
+async def island_type(text: str, delay: float = 0.015) -> str:
+    """
+    Saisit du texte au clavier Windows avec support natif Unicode complet (accents français, ponctuation, symboles).
+    - text : Texte à taper
+    - delay : Délai en secondes entre chaque caractère frappé (défaut: 0.015s)
+    """
+    res = await send_command_to_island({
+        "action": "type",
+        "text": text,
+        "delay": delay
+    })
+    return json.dumps(res, ensure_ascii=False)
+
+@mcp.tool()
+async def island_press_key(key: str) -> str:
+    """
+    Simule une touche ou combinaison de touches Windows.
+    Exemples : 'enter', 'tab', 'escape', 'ctrl+s', 'ctrl+c', 'ctrl+v', 'alt+tab', 'win+d', 'backspace'.
+    """
+    res = await send_command_to_island({
+        "action": "press_key",
+        "key": key
+    })
+    return json.dumps(res, ensure_ascii=False)
+
+@mcp.tool()
+async def island_scroll(amount: int = -3) -> str:
+    """
+    Fait défiler la molette de souris.
+    - amount : Nombre de crans de molette (valeur positive pour monter, négative pour descendre, ex: -3).
+    """
+    res = await send_command_to_island({
+        "action": "scroll",
+        "amount": amount
+    })
+    return json.dumps(res, ensure_ascii=False)
+
 if __name__ == "__main__":
     mcp.run()

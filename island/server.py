@@ -48,6 +48,84 @@ class IslandWebSocketServer:
                             info = get_screens_info()
                             await websocket.send(json.dumps(info, ensure_ascii=False))
                             continue
+                        elif action == "find_elements":
+                            from island.ocr import find_screen_elements
+                            query = data.get("query", "")
+                            image_path = data.get("image_path", None)
+                            loop = asyncio.get_running_loop()
+                            elements = await loop.run_in_executor(None, find_screen_elements, query, image_path)
+                            await websocket.send(json.dumps({
+                                "status": "success",
+                                "query": query,
+                                "count": len(elements),
+                                "elements": elements
+                            }, ensure_ascii=False))
+                            continue
+                        elif action == "click":
+                            from island.automation import click
+                            x = data.get("x")
+                            y = data.get("y")
+                            button = data.get("button", "left")
+                            double = data.get("double", False)
+                            smooth = data.get("smooth", True)
+                            loop = asyncio.get_running_loop()
+                            await loop.run_in_executor(None, click, x, y, button, double, smooth)
+                            await websocket.send(json.dumps({
+                                "status": "success",
+                                "action": "click",
+                                "x": x,
+                                "y": y,
+                                "button": button
+                            }, ensure_ascii=False))
+                            continue
+                        elif action == "move_cursor":
+                            from island.automation import move_cursor_smooth
+                            x = data.get("x")
+                            y = data.get("y")
+                            duration = float(data.get("duration", 0.35))
+                            loop = asyncio.get_running_loop()
+                            await loop.run_in_executor(None, move_cursor_smooth, x, y, duration)
+                            await websocket.send(json.dumps({
+                                "status": "success",
+                                "action": "move_cursor",
+                                "x": x,
+                                "y": y
+                            }, ensure_ascii=False))
+                            continue
+                        elif action == "type":
+                            from island.automation import type_text
+                            text = data.get("text", "")
+                            delay = float(data.get("delay", 0.015))
+                            loop = asyncio.get_running_loop()
+                            await loop.run_in_executor(None, type_text, text, delay)
+                            await websocket.send(json.dumps({
+                                "status": "success",
+                                "action": "type",
+                                "length": len(text)
+                            }, ensure_ascii=False))
+                            continue
+                        elif action == "press_key":
+                            from island.automation import press_key
+                            key_combo = data.get("key", "")
+                            loop = asyncio.get_running_loop()
+                            await loop.run_in_executor(None, press_key, key_combo)
+                            await websocket.send(json.dumps({
+                                "status": "success",
+                                "action": "press_key",
+                                "key": key_combo
+                            }, ensure_ascii=False))
+                            continue
+                        elif action == "scroll":
+                            from island.automation import scroll
+                            amount = int(data.get("amount", -3))
+                            loop = asyncio.get_running_loop()
+                            await loop.run_in_executor(None, scroll, amount)
+                            await websocket.send(json.dumps({
+                                "status": "success",
+                                "action": "scroll",
+                                "amount": amount
+                            }, ensure_ascii=False))
+                            continue
 
                         # Transmission thread-safe à l'interface PyQt6
                         self.window.state_change_requested.emit(action, data)
