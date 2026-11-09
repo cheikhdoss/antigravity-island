@@ -34,10 +34,9 @@ try {
 """
 
 def ensure_stt_worker():
-    if not os.path.exists(PS_STT_SCRIPT):
-        os.makedirs(os.path.dirname(PS_STT_SCRIPT), exist_ok=True)
-        with open(PS_STT_SCRIPT, "w", encoding="utf-8") as f:
-            f.write(PS_STT_TEMPLATE)
+    os.makedirs(os.path.dirname(PS_STT_SCRIPT), exist_ok=True)
+    with open(PS_STT_SCRIPT, "w", encoding="utf-8") as f:
+        f.write(PS_STT_TEMPLATE)
 
 def transcribe_audio(audio_path: str) -> str:
     """Transcrit un fichier WAV en texte via le moteur de reconnaissance vocale natif Windows fr-FR."""

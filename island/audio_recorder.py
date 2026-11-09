@@ -22,9 +22,15 @@ class AudioRecorder:
             self.winmm.mciSendStringW(f"close {self.alias}", None, 0, None)
             
             # Ouvrir un nouveau flux waveaudio
-            res_open = self.winmm.mciSendStringW(f"open new type waveaudio alias {self.alias}", None, 0, None)
-            # Configurer le format audio (16-bit, 16000Hz mono pour reconnaissance vocale optimale)
+            self.winmm.mciSendStringW(f"open new type waveaudio alias {self.alias}", None, 0, None)
+            # Configurer le format audio (16-bit, 16000Hz mono PCM pour reconnaissance vocale optimale)
             self.winmm.mciSendStringW(f"set {self.alias} time format ms", None, 0, None)
+            self.winmm.mciSendStringW(f"set {self.alias} format tag pcm", None, 0, None)
+            self.winmm.mciSendStringW(f"set {self.alias} channels 1", None, 0, None)
+            self.winmm.mciSendStringW(f"set {self.alias} samplespersec 16000", None, 0, None)
+            self.winmm.mciSendStringW(f"set {self.alias} bitspersample 16", None, 0, None)
+            self.winmm.mciSendStringW(f"set {self.alias} alignment 2", None, 0, None)
+            self.winmm.mciSendStringW(f"set {self.alias} bytespersec 32000", None, 0, None)
             
             # Lancer l'enregistrement
             res_rec = self.winmm.mciSendStringW(f"record {self.alias}", None, 0, None)
