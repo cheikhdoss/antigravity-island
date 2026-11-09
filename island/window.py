@@ -70,8 +70,26 @@ class IslandWindow(QWidget):
         # Connexion du signal pour les commandes distantes
         self.state_change_requested.connect(self.apply_remote_command)
 
+        # Paramètres utilisateur personnalisés
+        self.accent_color = Config.COLOR_ACCENT_CYAN
+        self.top_margin = Config.TOP_MARGIN
+
         # Positionnement initial
         self._update_geometry()
+
+    def apply_settings(self, settings: dict):
+        """Applique les réglages personnalisés (couleur, position, opacité)."""
+        if "accent_color" in settings:
+            self.accent_color = QColor(settings["accent_color"])
+        if "position_mode" in settings:
+            self.top_margin = 12 if settings["position_mode"] == "floating" else 0
+        if "island_visible" in settings:
+            if settings["island_visible"]:
+                self.show()
+            else:
+                self.hide()
+        self._update_geometry()
+        self.update()
 
     def set_state(self, state_name: str, payload: dict = None):
         """Bascule d'un état à un autre avec animation fluide."""
@@ -135,7 +153,7 @@ class IslandWindow(QWidget):
         total_h = int(self.cur_h + padding + Config.SHADOW_OFFSET_Y)
         
         x = screen_geo.x() + (screen_geo.width() - total_w) // 2
-        y = screen_geo.y() + Config.TOP_MARGIN
+        y = screen_geo.y() + getattr(self, "top_margin", Config.TOP_MARGIN)
         
         self.setGeometry(x, y, total_w, total_h)
 
@@ -225,20 +243,24 @@ class IslandWindow(QWidget):
 
     def _draw_idle_content(self, painter: QPainter, rect: QRectF):
         """Contenu compact au repos."""
-        # Point lumineux Antigravity Cyan
+        # Point lumineux Antigravity avec couleur personnalisée
         cy = rect.center().y()
         dot_x = rect.left() + 20.0
         
-        # Halo cyan
+        acc = getattr(self, "accent_color", Config.COLOR_ACCENT_CYAN)
         glow = QRadialGradient(QPointF(dot_x, cy), 8.0)
-        glow.setColorAt(0.0, QColor(56, 189, 248, 220))
-        glow.setColorAt(1.0, QColor(56, 189, 248, 0))
+        c_glow = QColor(acc)
+        c_glow.setAlpha(220)
+        glow.setColorAt(0.0, c_glow)
+        c_glow_zero = QColor(acc)
+        c_glow_zero.setAlpha(0)
+        glow.setColorAt(1.0, c_glow_zero)
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QBrush(glow))
         painter.drawEllipse(QPointF(dot_x, cy), 8.0, 8.0)
 
         # Point solide
-        painter.setBrush(QBrush(QColor(56, 189, 248)))
+        painter.setBrush(QBrush(acc))
         painter.drawEllipse(QPointF(dot_x, cy), 3.5, 3.5)
 
         # Label discret

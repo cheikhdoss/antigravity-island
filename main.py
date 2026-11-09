@@ -1,27 +1,86 @@
 import sys
-from PyQt6.QtWidgets import QApplication
+import os
+from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
+from PyQt6.QtGui import QIcon, QPixmap, QPainter, QColor, QBrush
+from PyQt6.QtCore import Qt
+
 from island.window import IslandWindow
+from island.settings_window import SettingsWindow, load_settings
 from island.server import IslandWebSocketServer
+
+def create_tray_icon():
+    """Crée une icône pour la barre des tâches système Windows (System Tray)."""
+    pixmap = QPixmap(32, 32)
+    pixmap.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+    
+    # Fond sombre rond
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.setBrush(QBrush(QColor(10, 10, 14)))
+    painter.drawEllipse(2, 2, 28, 28)
+    
+    # Point cyan Antigravity
+    painter.setBrush(QBrush(QColor(56, 189, 248)))
+    painter.drawEllipse(11, 11, 10, 10)
+    painter.end()
+    
+    return QIcon(pixmap)
 
 def main():
     app = QApplication(sys.argv)
     app.setApplicationName("Antigravity Island")
     app.setQuitOnLastWindowClosed(False)
 
-    # 1. Instanciation de l'île
-    window = IslandWindow()
-    window.show()
+    # 1. Charger les réglages
+    user_settings = load_settings()
 
-    # 2. Démarrage du serveur de contrôle WebSocket
-    server = IslandWebSocketServer(window)
+    # 2. Fenêtre de l'encoche (Overlay Dynamic Island)
+    island = IslandWindow()
+    island.apply_settings(user_settings)
+    if user_settings.get("island_visible", True):
+        island.show()
+
+    # 3. Fenêtre de contrôle & Réglages (Centre de contrôle de l'application)
+    control_center = SettingsWindow(island_window=island)
+    control_center.show()
+
+    # Lier les signaux du centre de contrôle à l'île
+    control_center.settings_changed.connect(island.apply_settings)
+    control_center.state_trigger_requested.connect(lambda st: island.set_state(st))
+    control_center.toggle_island_requested.connect(lambda vis: island.show() if vis else island.hide())
+
+    # 4. Serveur WebSocket d'arrière-plan pour pilotage Antigravity
+    server = IslandWebSocketServer(island)
     server.start()
 
+    # 5. Icône dans la zone de notification Windows (System Tray)
+    tray = QSystemTrayIcon(create_tray_icon(), app)
+    tray_menu = QMenu()
+
+    action_settings = tray_menu.addAction("Ouvrir le Centre de contrôle")
+    action_settings.triggered.connect(control_center.show)
+    action_settings.triggered.connect(control_center.raise_)
+    action_settings.triggered.connect(control_center.activateWindow)
+
+    tray_menu.addSeparator()
+
+    action_toggle = tray_menu.addAction("Basculer l'encoche")
+    action_toggle.triggered.connect(lambda: island.hide() if island.isVisible() else island.show())
+
+    tray_menu.addSeparator()
+
+    action_quit = tray_menu.addAction("Quitter Antigravity Island")
+    action_quit.triggered.connect(app.quit)
+
+    tray.setContextMenu(tray_menu)
+    tray.setToolTip("Antigravity Island - En ligne")
+    tray.show()
+
     print("=" * 60)
-    print("🏝️  Antigravity Island est active sur votre écran !")
-    print("👉 Cliquez sur l'encoche pour cycler manuellement entre les états :")
-    print("   [IDLE] -> [LISTENING] -> [THINKING] -> [SPEAKING] -> [ACTION]")
-    print("👉 Clic droit : Retour immédiat à l'état IDLE")
-    print("👉 Ou envoyez des commandes WebSocket sur ws://127.0.0.1:8765")
+    print("🏝️  Antigravity Island & Control Center sont lancés !")
+    print("👉 Fenêtre de configuration ouverte pour personnaliser l'application.")
+    print("👉 Icône active dans la barre des tâches (System Tray).")
     print("=" * 60)
 
     sys.exit(app.exec())
