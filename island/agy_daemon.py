@@ -29,7 +29,11 @@ class AgyDaemon:
             return cls._instance
 
     def __init__(self, workspace_cwd: Optional[str] = None):
-        self.workspace_cwd = workspace_cwd or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        if workspace_cwd:
+            self.workspace_cwd = workspace_cwd
+        else:
+            self.workspace_cwd = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "workspace")
+        os.makedirs(self.workspace_cwd, exist_ok=True)
         self.process: Optional[subprocess.Popen] = None
         self.session_id: Optional[str] = None
         self.is_ready = False
@@ -84,10 +88,10 @@ class AgyDaemon:
             self.session_id = res_new["sessionId"]
             print(f"[AgyDaemon] Session ACP active : {self.session_id}")
 
-            # 3. Configuration du modèle rapide (flash-low) et niveau de réflexion bas pour latence minimale
+            # 3. Configuration du modèle rapide (gemini-3.8-flash) et pensée low pour latence minimale
             try:
                 mod_id = self._next_id()
-                self._send_request_sync("session/set_model", {"sessionId": self.session_id, "modelId": "gemini-3.8-flash-low"}, req_id=mod_id, timeout=5.0)
+                self._send_request_sync("session/set_config_option", {"sessionId": self.session_id, "configId": "model", "value": "gemini-3.8-flash"}, req_id=mod_id, timeout=5.0)
             except Exception:
                 pass
 
@@ -100,9 +104,22 @@ class AgyDaemon:
             self.is_ready = True
             print("[AgyDaemon] Démon Antigravity ACP opérationnel et prêt !")
 
+            # 4. Pré-chauffage asynchrone
+            threading.Thread(target=self._prewarm, daemon=True).start()
+
         except Exception as e:
             print(f"[AgyDaemon] Erreur lors du démarrage du démon : {e}")
             self._running = False
+
+    def _prewarm(self):
+        """Pré-chauffe la session LLM pour éliminer tout temps d'attente à la première question de l'utilisateur."""
+        try:
+            time.sleep(1.0)
+            print("[AgyDaemon] Pré-chauffage du modèle LLM en tâche de fond...")
+            self.ask("Bonjour", timeout=25.0)
+            print("[AgyDaemon] Modèle LLM pré-chauffé avec succès !")
+        except Exception as e:
+            print(f"[AgyDaemon] Note pré-chauffage : {e}")
 
     def _send_request_sync(self, method: str, params: dict, req_id: Optional[int] = None, timeout: float = 10.0) -> Optional[dict]:
         if not self.process or not self.process.stdin:
@@ -185,8 +202,7 @@ class AgyDaemon:
 
     def ask(self, prompt: str, on_chunk: Optional[Callable[[str], None]] = None, timeout: float = 30.0) -> str:
         """
-        Envoie un prompt au modèle LLM persistant et renvoie la réponse complète.
-        Supporte un callback de streaming on_chunk pour afficher ou vocaliser les tokens en direct.
+        Envoie un prompt au modèle LLM persistant et renvoie la réponse complète ultra-rapide.
         """
         if not prompt or not prompt.strip():
             return ""
@@ -217,10 +233,10 @@ class AgyDaemon:
             self._pending_requests[req_id] = container
 
             system_context = (
-                "Consigne: Tu es Antigravity Island, l'assistant vocal intelligent du bureau Windows. "
-                "Réponds en français de manière directe, naturelle et concise (maximum 1 ou 2 phrases percutantes, adaptées à la voix). "
-                "Ne mets aucun emoji, pas de code ni de formatage markdown lourd (pas d'astérisques).\n\n"
-                f"Question de l'utilisateur: {prompt.strip()}"
+                "Consigne: Tu es l'assistant de l'encoche Dynamic Island sur Windows. "
+                "Réponds IMMÉDIATEMENT en 1 SEULE phrase concise et directe en français, sans réflexion ni préambule. "
+                "Ne mets aucun emoji ni astérisques markdown.\n\n"
+                f"Question : {prompt.strip()}"
             )
 
             prompt_payload = {

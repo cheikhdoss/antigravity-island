@@ -78,12 +78,9 @@ def main():
     if user_settings.get("island_visible", True):
         island.show()
 
-    # 3. Fenêtre de contrôle & Réglages (Centre de contrôle de l'application)
+    # 3. Fenêtre de contrôle & Réglages (Centre de contrôle accessible via clic droit ou System Tray)
     control_center = SettingsWindow(island_window=island)
     island.settings_window = control_center
-    control_center.show()
-    control_center.raise_()
-    control_center.activateWindow()
 
     # Sauvegarde garantie en cas d'arrêt de l'application
     app.aboutToQuit.connect(lambda: save_settings(control_center.settings))

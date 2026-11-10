@@ -58,6 +58,18 @@ class Config:
             height=124,
             radius=30,
             title="Action de l'agent"
+        ),
+        "notification": IslandStateConfig(
+            width=460,
+            height=76,
+            radius=26,
+            title="Notification"
+        ),
+        "minimized_dock": IslandStateConfig(
+            width=320,
+            height=54,
+            radius=24,
+            title="Fenêtres réduites"
         )
     }
     

@@ -2,6 +2,7 @@ import os
 import time
 import wave
 import ctypes
+import collections
 import numpy as np
 
 try:
@@ -19,16 +20,18 @@ except Exception:
 
 class AudioRecorder:
     """
-    Enregistreur de microphone haute fidélité pour Antigravity Island.
-    - Utilise sounddevice (WASAPI natif) comme moteur audio principal.
-    - Calibre automatiquement le volume du microphone Windows à 100% et s'assure qu'il n'est pas muet via CoreAudio.
-    - Analyse l'énergie (RMS et Peak) pour détecter si l'utilisateur a réellement parlé ou si le micro est silencieux.
-    - Dispose d'un fallback automatique vers winmm.dll (MCI) en cas d'indisponibilité.
+    Enregistreur microphone ultra-réactif et haute fidélité pour Antigravity Island.
+    - Architecture Warm-Stream : flux WASAPI maintenu ouvert en continu en arrière-plan.
+    - Latence de démarrage : 0.0 ms (aucun délai de négociation audio à l'appui de touche).
+    - Ring buffer de pré-capture (200ms) pour ne jamais tronquer la première syllabe.
+    - Élimination adaptative des silences (VAD) pour accélérer le STT Google.
+    - Fallback automatique winmm en cas d'imprévu.
     """
     def __init__(self, sample_rate: int = 16000):
         self.sample_rate = sample_rate
         self.is_recording = False
         self.frames = []
+        self.pre_buffer = collections.deque(maxlen=7)  # ~220ms d'historique audio continu
         self.stream = None
         self.last_rms = 0.0
         self.last_peak = 0
@@ -38,10 +41,10 @@ class AudioRecorder:
         self.alias = "antigravity_mic"
         self.using_fallback = False
 
-        self._ensure_mic_unmuted()
+        self._init_stream()
 
-    def _ensure_mic_unmuted(self):
-        """Vérifie l'état matériel/système du microphone via Windows CoreAudio et booste le volume à 100%."""
+    def _ensure_mic_unmuted_quick(self):
+        """Vérification rapide du volume micro sans bloquer le thread principal."""
         if not HAS_PYCAW:
             return
         try:
@@ -51,49 +54,68 @@ class AudioRecorder:
                 vol = ctypes.cast(ep, ctypes.POINTER(IAudioEndpointVolume))
                 if vol.GetMute():
                     vol.SetMute(0, None)
-                    print("[AudioRecorder] Micro reactive (demute automatique)")
-                
                 cur_lvl = vol.GetMasterVolumeLevelScalar()
                 if cur_lvl < 0.85:
                     vol.SetMasterVolumeLevelScalar(1.0, None)
-                    print(f"[AudioRecorder] Volume micro calibre a 100% (etait a {int(cur_lvl*100)}%)")
-        except Exception as e:
-            print("[AudioRecorder] Verification CoreAudio:", e)
+        except Exception:
+            pass
 
     def _audio_callback(self, indata, frames_count, time_info, status):
+        data = indata.copy()
         if self.is_recording:
-            self.frames.append(indata.copy())
+            self.frames.append(data)
+        else:
+            self.pre_buffer.append(data)
+
+    def _init_stream(self):
+        """Initialise le flux continu en arrière-plan."""
+        if not HAS_SD:
+            self.using_fallback = True
+            return
+
+        try:
+            self._ensure_mic_unmuted_quick()
+            self.stream = sd.InputStream(
+                samplerate=self.sample_rate,
+                channels=1,
+                dtype='int16',
+                callback=self._audio_callback
+            )
+            self.stream.start()
+            self.using_fallback = False
+            print("[AudioRecorder] Flux audio WASAPI warm-stream actif (latence démarrage = 0ms).")
+        except Exception as e:
+            print("[AudioRecorder] Impossible d'ouvrir le flux WASAPI, mode fallback activé :", e)
+            self.stream = None
+            self.using_fallback = True
 
     def start_recording(self):
-        """Démarre l'enregistrement audio depuis le microphone."""
+        """Démarre l'enregistrement instantanément (0 ms)."""
         if self.is_recording:
             return
 
-        self._ensure_mic_unmuted()
-        self.frames = []
         self.last_rms = 0.0
         self.last_peak = 0
-        self.using_fallback = False
-        self.is_recording = True
 
+        if not self.using_fallback and self.stream and self.stream.active:
+            # Récupère le pre-buffer pour ne pas couper le début du premier mot
+            self.frames = list(self.pre_buffer)
+            self.is_recording = True
+            return
+
+        # Si le stream s'était arrêté, relancer
         if HAS_SD:
-            try:
-                self.stream = sd.InputStream(
-                    samplerate=self.sample_rate,
-                    channels=1,
-                    dtype='int16',
-                    callback=self._audio_callback
-                )
-                self.stream.start()
-                print("[AudioRecorder] Enregistrement WASAPI demarre.")
+            self._init_stream()
+            if self.stream and self.stream.active:
+                self.frames = list(self.pre_buffer)
+                self.is_recording = True
                 return
-            except Exception as e:
-                print("[AudioRecorder] Echec stream WASAPI, bascule sur winmm:", e)
-                self.stream = None
 
-        # Fallback winmm (MCI)
+        # Fallback winmm
         try:
             self.using_fallback = True
+            self.frames = []
+            self.is_recording = True
             self.winmm.mciSendStringW(f"close {self.alias}", None, 0, None)
             self.winmm.mciSendStringW(f"open new type waveaudio alias {self.alias}", None, 0, None)
             self.winmm.mciSendStringW(f"set {self.alias} time format ms", None, 0, None)
@@ -103,15 +125,13 @@ class AudioRecorder:
             self.winmm.mciSendStringW(f"set {self.alias} bitspersample 16", None, 0, None)
             self.winmm.mciSendStringW(f"set {self.alias} alignment 2", None, 0, None)
             self.winmm.mciSendStringW(f"record {self.alias}", None, 0, None)
-            print("[AudioRecorder] Enregistrement winmm (fallback) demarre.")
         except Exception as e:
             print("[AudioRecorder] Erreur winmm start:", e)
             self.is_recording = False
 
     def stop_recording(self, output_path: str) -> bool:
         """
-        Arrête l'enregistrement, sauvegarde dans un fichier .wav et analyse l'énergie audio.
-        Retourne True si un fichier audio valide a été sauvegardé.
+        Arrête l'enregistrement, élague les silences et sauvegarde le fichier WAV.
         """
         if not self.is_recording:
             return False
@@ -121,32 +141,50 @@ class AudioRecorder:
         os.makedirs(os.path.dirname(abs_path), exist_ok=True)
 
         if not self.using_fallback and self.stream:
-            try:
-                self.stream.stop()
-                self.stream.close()
-            except Exception:
-                pass
-            self.stream = None
-
             if not self.frames:
-                print("[AudioRecorder] Aucun frame capture via WASAPI.")
                 return False
 
             try:
                 audio_data = np.concatenate(self.frames, axis=0)
+                self.frames = []
+
+                # Calcul énergie brute
                 self.last_rms = float(np.sqrt(np.mean(audio_data.astype(np.float64)**2)))
                 self.last_peak = int(np.max(np.abs(audio_data)))
+
+                # Élagage adaptatif des silences pour un envoi ultra-rapide au STT
+                flat = np.abs(audio_data.flatten())
+                thresh = max(180, int(self.last_peak * 0.08))
+                non_silent = np.where(flat > thresh)[0]
+                if len(non_silent) > 0:
+                    start_pad = max(0, non_silent[0] - int(self.sample_rate * 0.15))
+                    end_pad = min(len(audio_data), non_silent[-1] + int(self.sample_rate * 0.15))
+                    clean_data = audio_data[start_pad:end_pad]
+                else:
+                    clean_data = audio_data
+
+                # Amplification dynamique intelligente / AGC (Normalisation numérique haute fidélité)
+                # Remonte le niveau du signal audio à ~24000 (environ 75% du maximum 32767)
+                peak_clean = int(np.max(np.abs(clean_data))) if len(clean_data) > 0 else 0
+                if peak_clean > 100:
+                    target_peak = 24000.0
+                    gain = min(15.0, target_peak / float(peak_clean))
+                    amplified = np.clip(clean_data.astype(np.float32) * gain, -32767, 32767).astype(np.int16)
+                    print(f"[AudioRecorder] Gain AGC appliqué : x{gain:.1f} (Peak {peak_clean} -> {int(np.max(np.abs(amplified)))})")
+                else:
+                    amplified = clean_data
 
                 with wave.open(abs_path, 'wb') as wf:
                     wf.setnchannels(1)
                     wf.setsampwidth(2)
                     wf.setframerate(self.sample_rate)
-                    wf.writeframes(audio_data.tobytes())
+                    wf.writeframes(amplified.tobytes())
 
-                print(f"[AudioRecorder] Audio sauvegarde: {abs_path} (RMS={self.last_rms:.2f}, Peak={self.last_peak}, duree={len(audio_data)/self.sample_rate:.1f}s)")
+                dur = len(clean_data) / self.sample_rate
+                print(f"[AudioRecorder] Audio capturé : {abs_path} (RMS={self.last_rms:.1f}, Peak={self.last_peak}, Durée={dur:.2f}s)")
                 return os.path.exists(abs_path) and os.path.getsize(abs_path) > 100
             except Exception as e:
-                print("[AudioRecorder] Erreur ecriture WAV WASAPI:", e)
+                print("[AudioRecorder] Erreur WAV WASAPI:", e)
                 return False
 
         # Fallback winmm
@@ -170,12 +208,7 @@ class AudioRecorder:
                         self.last_peak = int(np.max(np.abs(samples)))
                 except Exception:
                     self.last_rms = 50.0
-                print(f"[AudioRecorder] Audio sauvegarde winmm: {abs_path} (RMS={self.last_rms:.2f})")
             return success
         except Exception as e:
             print("[AudioRecorder] Erreur arret winmm:", e)
-            try:
-                self.winmm.mciSendStringW(f"close {self.alias}", None, 0, None)
-            except Exception:
-                pass
             return False

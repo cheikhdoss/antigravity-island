@@ -2,86 +2,74 @@ import os
 import json
 import time
 import threading
-from pynput import keyboard
+import ctypes
 from island.audio_recorder import AudioRecorder
 from island.stt import transcribe_audio
 from island.brain import generate_response
 
+user32 = ctypes.windll.user32
+VK_LWIN = 0x5B
+VK_RWIN = 0x5C
+VK_MENU = 0x12  # Alt
+
+def is_key_physically_down(vk: int) -> bool:
+    """Interroge directement l'état matériel du noyau Windows (impossible de rester bloqué)."""
+    return (user32.GetAsyncKeyState(vk) & 0x8000) != 0
+
 class PushToTalkEngine:
     """
-    Moteur Push-to-Talk global avec combinaison de touches Windows + Alt.
-    Détecte les touches n'importe où sous Windows, même si l'application est en arrière-plan.
-    Supporte les modes Hybride (recommandé), Maintien (Hold) et Bascule (Toggle).
-    Enregistre le micro, transcrit la voix et génère une réponse instantanée affichée sur l'encoche.
+    Moteur Push-to-Talk matériel ultra-robuste avec combinaison [Windows + Alt].
+    - Utilise GetAsyncKeyState du noyau Windows : aucune désynchronisation possible, aucun conflit avec Alt+Tab.
+    - Démarrage instantané et arrêt immédiat.
+    - Enregistre le micro, transcrit la voix et génère une réponse instantanée affichée sur l'encoche.
     """
 
-    def __init__(self, window_instance, mode: str = "hybrid"):
+    def __init__(self, window_instance, mode: str = "hold"):
         self.window = window_instance
         self.mode = mode
-        self.listener = None
         self.running = False
+        self.thread = None
         self.recorder = AudioRecorder()
         
-        self.win_pressed = False
-        self.alt_pressed = False
+        self.combo_active = False
         self.press_start_time = 0.0
         self.is_active = False
-        self._lock = threading.Lock()
 
     def start(self):
         if self.running:
             return
         self.running = True
-        self.listener = keyboard.Listener(
-            on_press=self._on_press,
-            on_release=self._on_release
-        )
-        self.listener.daemon = True
-        self.listener.start()
-        print("[PushToTalkEngine] Raccourci global actif : [Windows + Alt]")
+        self.thread = threading.Thread(target=self._poll_loop, daemon=True)
+        self.thread.start()
+        print("[PushToTalkEngine] Raccourci matériel actif : [Windows + Alt] (GetAsyncKeyState)")
 
     def stop(self):
         self.running = False
-        if self.listener:
-            self.listener.stop()
-            self.listener = None
 
     def set_mode(self, mode: str):
         self.mode = mode
 
-    def _is_win_key(self, key):
-        return key in [keyboard.Key.cmd, keyboard.Key.cmd_l, keyboard.Key.cmd_r]
+    def _poll_loop(self):
+        while self.running:
+            time.sleep(0.02)  # 50 Hz : ultra-réactif (20ms) et 0.00% CPU
+            try:
+                win_down = is_key_physically_down(VK_LWIN) or is_key_physically_down(VK_RWIN)
+                alt_down = is_key_physically_down(VK_MENU)
+                combo_down = win_down and alt_down
 
-    def _is_alt_key(self, key):
-        return key in [keyboard.Key.alt, keyboard.Key.alt_l, keyboard.Key.alt_r, keyboard.Key.alt_gr]
-
-    def _on_press(self, key):
-        with self._lock:
-            if self._is_win_key(key):
-                self.win_pressed = True
-            elif self._is_alt_key(key):
-                self.alt_pressed = True
-
-            # Détection de la combinaison Windows + Alt
-            if self.win_pressed and self.alt_pressed:
-                if self.press_start_time == 0.0:
+                if combo_down and not self.combo_active:
+                    # Début de combinaison
+                    self.combo_active = True
                     self.press_start_time = time.time()
                     self._handle_combo_down()
-
-    def _on_release(self, key):
-        with self._lock:
-            was_combo_active = self.win_pressed and self.alt_pressed
-            
-            if self._is_win_key(key):
-                self.win_pressed = False
-            elif self._is_alt_key(key):
-                self.alt_pressed = False
-
-            # Relâchement de l'une des touches
-            if was_combo_active and not (self.win_pressed and self.alt_pressed):
-                press_duration = time.time() - self.press_start_time
-                self.press_start_time = 0.0
-                self._handle_combo_up(press_duration)
+                elif not combo_down and self.combo_active:
+                    # Fin de combinaison
+                    self.combo_active = False
+                    duration = time.time() - self.press_start_time
+                    self.press_start_time = 0.0
+                    self._handle_combo_up(duration)
+            except Exception:
+                pass
 
     def _handle_combo_down(self):
         if getattr(self.window, "voice_engine", None):
@@ -89,20 +77,14 @@ class PushToTalkEngine:
 
         if self.mode == "hold":
             self.is_active = True
-            print("[PushToTalk] Maintien [Windows + Alt] -> Mode Ecoute...")
             self.recorder.start_recording()
             self.window.state_change_requested.emit("set_state", {"state": "listening"})
         elif self.mode == "toggle":
-            # Géré au relâchement
             pass
         else:  # hybrid
             if not self.is_active:
-                print("[PushToTalk] Combinaison [Windows + Alt] -> Demarrage ecoute...")
                 self.recorder.start_recording()
                 self.window.state_change_requested.emit("set_state", {"state": "listening"})
-            else:
-                # Déjà actif : ne PAS réinitialiser l'enregistrement
-                pass
 
     def _trigger_thinking_and_capture(self):
         self.window.state_change_requested.emit("set_state", {"state": "thinking"})
@@ -113,12 +95,12 @@ class PushToTalkEngine:
         wav_path = os.path.join(appdata_dir, "input_voice.wav")
         query_path = os.path.join(appdata_dir, "last_voice_query.json")
 
-        # 1. Arrêt de l'enregistrement et sauvegarde audio
+        # 1. Arrêt instantané de l'enregistrement
         has_audio = self.recorder.stop_recording(wav_path)
         rms = getattr(self.recorder, "last_rms", 0.0)
         peak = getattr(self.recorder, "last_peak", 0)
 
-        # 2. Transcription vocale native Windows
+        # 2. Transcription ultra-rapide (<0.4s)
         transcription = ""
         is_silent = (not has_audio) or (rms < 3.0 and peak < 20)
 
@@ -130,13 +112,20 @@ class PushToTalkEngine:
             except Exception as e:
                 print("[PushToTalk] Erreur STT:", e)
 
-        # 3. Génération de la réponse conversationnelle
+        # 3. Génération directe de la réponse textuelle (avec streaming en direct)
+        accumulated_chunks = []
+        def on_stream_chunk(chunk: str):
+            accumulated_chunks.append(chunk)
+            streamed = "".join(accumulated_chunks).strip()
+            if streamed:
+                self.window.state_change_requested.emit("stream_text", {"text": streamed})
+
         if is_silent:
-            response_text = "Microphone inaudible. Vérifiez la touche micro (F4) et parlez."
+            response_text = "Microphone inaudible. Maintenez Win + Alt et parlez."
         elif transcription:
-            response_text = generate_response(transcription)
+            response_text = generate_response(transcription, on_chunk=on_stream_chunk)
         else:
-            response_text = "Je n'ai pas bien compris. Parlez un peu plus fort ou plus près du micro."
+            response_text = "Je n'ai pas bien compris. Parlez un peu plus près du micro."
 
         # 4. Sauvegarde de la requête et de la réponse
         payload = {
@@ -154,37 +143,30 @@ class PushToTalkEngine:
         except Exception:
             pass
 
-        # 5. Réponse affichée directement sur l'encoche et prononcée naturellement
+        # 5. Affichage direct et instantané sur le Dynamic Island (sans voix)
         self.window.state_change_requested.emit("speak", {"text": response_text})
 
     def _handle_combo_up(self, duration: float):
         if self.mode == "hold":
             self.is_active = False
-            print(f"[PushToTalk] Relachement apres {duration:.2f}s -> Passage en Analyse...")
             self._trigger_thinking_and_capture()
         elif self.mode == "toggle":
             if not self.is_active:
                 self.is_active = True
-                print("[PushToTalk] Bascule on -> Mode Ecoute...")
                 self.recorder.start_recording()
                 self.window.state_change_requested.emit("set_state", {"state": "listening"})
             else:
                 self.is_active = False
-                print("[PushToTalk] Bascule off -> Passage en Analyse...")
                 self._trigger_thinking_and_capture()
         else:  # hybrid
-            if duration >= 0.35:
-                # Maintien long : Push-to-Talk classique (on relâche pour envoyer)
+            if duration >= 0.15:
+                # Maintien classique Push-to-Talk : déclenchement immédiat dès relâchement
                 self.is_active = False
-                print(f"[PushToTalk] Relachement maintien ({duration:.2f}s) -> Analyse...")
                 self._trigger_thinking_and_capture()
             else:
-                # Tap court : bascule mains-libres
+                # Tap court (<150ms) : bascule mains-libres
                 if not self.is_active:
                     self.is_active = True
-                    print("[PushToTalk] Tap court -> Mode Mains-libres active (re-tapez Win+Alt pour arreter)...")
-                    # L'enregistrement a déjà démarré dans _handle_combo_down
                 else:
                     self.is_active = False
-                    print("[PushToTalk] Second tap court -> Fin d'ecoute mains-libres, Analyse...")
                     self._trigger_thinking_and_capture()

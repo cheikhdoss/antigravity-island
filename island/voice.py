@@ -19,7 +19,7 @@ class VoiceEngine:
     """
 
     DEFAULT_VOICE = "fr-FR-VivienneMultilingualNeural"
-    DEFAULT_RATE = "+20%"
+    DEFAULT_RATE = "+10%"
 
     def __init__(self, window_instance=None, voice: str = DEFAULT_VOICE, rate: str = DEFAULT_RATE):
         self.window = window_instance

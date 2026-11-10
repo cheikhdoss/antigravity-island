@@ -65,10 +65,10 @@ def load_settings():
         "idle_width": 110,           # Largeur au repos
         "idle_height": 30,           # Hauteur au repos
         "island_visible": True,
-        "ptt_mode": "hybrid",        # "hybrid", "hold", "toggle"
-        "voice_enabled": True,       # Synthèse vocale Edge-TTS
+        "ptt_mode": "hold",          # "hold" (Push-to-talk immédiat), "hybrid", "toggle"
+        "voice_enabled": False,      # Texte pur sur le Dynamic Island (sans voix)
         "voice_name": "fr-FR-VivienneMultilingualNeural",
-        "voice_rate": "+20%",
+        "voice_rate": "+10%",
         "llm_backend": "agy",
         "autostart": is_autostart_enabled(),
         "screen_index": 0,
@@ -579,12 +579,12 @@ class SettingsWindow(QWidget):
         row_vrate.addStretch()
         self.combo_rate = QComboBox()
         self.combo_rate.blockSignals(True)
-        self.combo_rate.addItem("Rapide & Naturel (+20%)", "+20%")
-        self.combo_rate.addItem("Modéré (+10%)", "+10%")
+        self.combo_rate.addItem("Naturel & Posé (+10%)", "+10%")
         self.combo_rate.addItem("Standard (+0%)", "+0%")
+        self.combo_rate.addItem("Rapide (+20%)", "+20%")
         self.combo_rate.addItem("Très dynamique (+30%)", "+30%")
 
-        cur_r = self.settings.get("voice_rate", "+20%")
+        cur_r = self.settings.get("voice_rate", "+10%")
         idx_r = self.combo_rate.findData(cur_r)
         if idx_r >= 0:
             self.combo_rate.setCurrentIndex(idx_r)
