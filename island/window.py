@@ -107,7 +107,7 @@ class IslandWindow(QWidget):
 
         # Composants vocaux et contrôle
         self.settings_window = None
-        self.voice_enabled = False  # Désactivé : la voix officielle provient du mode Voice Call d'Antigravity
+        self.voice_enabled = True  # Activé avec Edge-TTS voix neuronale naturelle
         self.voice_engine = VoiceEngine(window_instance=self)
 
         # Animation morphique
@@ -143,6 +143,10 @@ class IslandWindow(QWidget):
             self.custom_idle_w = float(settings["idle_width"])
         if "idle_height" in settings:
             self.custom_idle_h = float(settings["idle_height"])
+        if "voice_enabled" in settings:
+            self.voice_enabled = bool(settings["voice_enabled"])
+        if "voice_name" in settings and hasattr(self, "voice_engine"):
+            self.voice_engine.set_voice(settings["voice_name"])
         if "island_visible" in settings:
             if settings["island_visible"]:
                 self.show()

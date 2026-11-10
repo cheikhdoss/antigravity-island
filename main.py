@@ -49,8 +49,10 @@ def kill_other_instances():
     try:
         import psutil
         cur_pid = os.getpid()
+        parent_pid = os.getppid()
         for proc in psutil.process_iter(['pid', 'name']):
-            if proc.info['pid'] != cur_pid and proc.info['name'] and 'antigravityisland' in proc.info['name'].lower():
+            pid = proc.info['pid']
+            if pid != cur_pid and pid != parent_pid and proc.info['name'] and 'antigravityisland' in proc.info['name'].lower():
                 try:
                     proc.kill()
                 except Exception:

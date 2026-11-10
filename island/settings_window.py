@@ -66,6 +66,9 @@ def load_settings():
         "idle_height": 30,           # Hauteur au repos
         "island_visible": True,
         "ptt_mode": "hybrid",        # "hybrid", "hold", "toggle"
+        "voice_enabled": True,       # Synthèse vocale Edge-TTS
+        "voice_name": "fr-FR-HenriNeural",
+        "llm_backend": "agy",
         "autostart": is_autostart_enabled(),
         "screen_index": 0,
     }
@@ -517,7 +520,65 @@ class SettingsWindow(QWidget):
 
         content_layout.addWidget(card_ptt)
 
-        # CARTE 5 : Système & Démarrage Automatique
+        # CARTE 5 : Intelligence Artificielle & Synthèse Vocale
+        card_ai = QFrame()
+        card_ai.setProperty("class", "card")
+        layout_ai = QVBoxLayout(card_ai)
+        layout_ai.setSpacing(10)
+
+        lbl_ai = QLabel("Intelligence Artificielle & Voix")
+        lbl_ai.setProperty("class", "section")
+        layout_ai.addWidget(lbl_ai)
+
+        # Modèle LLM
+        row_llm = QHBoxLayout()
+        row_llm.addWidget(QLabel("Moteur LLM :"))
+        row_llm.addStretch()
+        badge_llm = QLabel(" Antigravity CLI (agy) ")
+        badge_llm.setStyleSheet("background: #0284c7; color: #fff; font-weight: bold; border-radius: 4px; padding: 3px 8px; font-size: 11px;")
+        row_llm.addWidget(badge_llm)
+        layout_ai.addLayout(row_llm)
+
+        # Synthèse vocale activée
+        row_voice = QHBoxLayout()
+        row_voice.addWidget(QLabel("Activer la parole (Edge-TTS naturel) :"))
+        row_voice.addStretch()
+        self.check_voice = QCheckBox()
+        self.check_voice.blockSignals(True)
+        self.check_voice.setChecked(self.settings.get("voice_enabled", True))
+        self.check_voice.blockSignals(False)
+        self.check_voice.toggled.connect(self._on_voice_toggled)
+        row_voice.addWidget(self.check_voice)
+        layout_ai.addLayout(row_voice)
+
+        # Choix de la voix
+        row_vname = QHBoxLayout()
+        row_vname.addWidget(QLabel("Voix française :"))
+        row_vname.addStretch()
+        self.combo_voice = QComboBox()
+        self.combo_voice.blockSignals(True)
+        self.combo_voice.addItem("Henri (Naturel - Homme)", "fr-FR-HenriNeural")
+        self.combo_voice.addItem("Vivienne (Naturel - Femme)", "fr-FR-VivienneMultilingualNeural")
+        self.combo_voice.addItem("Denise (Expressif - Femme)", "fr-FR-DeniseNeural")
+
+        cur_v = self.settings.get("voice_name", "fr-FR-HenriNeural")
+        idx_v = self.combo_voice.findData(cur_v)
+        if idx_v >= 0:
+            self.combo_voice.setCurrentIndex(idx_v)
+        self.combo_voice.blockSignals(False)
+        self.combo_voice.currentIndexChanged.connect(self._on_voice_name_changed)
+        row_vname.addWidget(self.combo_voice)
+        layout_ai.addLayout(row_vname)
+
+        # Bouton tester la voix
+        btn_test_v = QPushButton("Écouter un exemple de voix")
+        btn_test_v.setProperty("class", "secondary")
+        btn_test_v.clicked.connect(self._test_voice)
+        layout_ai.addWidget(btn_test_v)
+
+        content_layout.addWidget(card_ai)
+
+        # CARTE 6 : Système & Démarrage Automatique
         card_sys = QFrame()
         card_sys.setProperty("class", "card")
         layout_sys = QVBoxLayout(card_sys)
@@ -651,6 +712,28 @@ class SettingsWindow(QWidget):
         save_settings(self.settings)
         self.settings_changed.emit(self.settings)
         self._flash_saved()
+
+    def _on_voice_toggled(self, checked: bool):
+        self.settings["voice_enabled"] = checked
+        save_settings(self.settings)
+        self.settings_changed.emit(self.settings)
+        self._flash_saved()
+
+    def _on_voice_name_changed(self, idx: int):
+        v = self.combo_voice.currentData()
+        self.settings["voice_name"] = v
+        save_settings(self.settings)
+        self.settings_changed.emit(self.settings)
+        self._flash_saved()
+
+    def _test_voice(self):
+        if self.island:
+            self.island.set_state("speaking", {"text": "Bonjour ! Je suis Antigravity, votre compagnon intelligent."})
+            if hasattr(self.island, "voice_engine"):
+                self.island.voice_engine.speak(
+                    "Bonjour ! Je suis Antigravity, votre compagnon intelligent.",
+                    callback_on_finish=lambda: self.island.set_state("idle")
+                )
 
     def _on_autostart_toggled(self, checked: bool):
         set_autostart(checked)

@@ -84,6 +84,9 @@ class PushToTalkEngine:
                 self._handle_combo_up(press_duration)
 
     def _handle_combo_down(self):
+        if getattr(self.window, "voice_engine", None):
+            self.window.voice_engine.stop()
+
         if self.mode == "hold":
             self.is_active = True
             print("[PushToTalk] Maintien [Windows + Alt] -> Mode Ecoute...")
@@ -151,12 +154,8 @@ class PushToTalkEngine:
         except Exception:
             pass
 
-        # 5. Réponse affichée directement sur l'encoche
+        # 5. Réponse affichée directement sur l'encoche et prononcée naturellement
         self.window.state_change_requested.emit("speak", {"text": response_text})
-        
-        # Maintien de l'affichage de la réponse (5.0s) avant retour fluide au repos
-        time.sleep(5.0)
-        self.window.state_change_requested.emit("set_state", {"state": "idle"})
 
     def _handle_combo_up(self, duration: float):
         if self.mode == "hold":
