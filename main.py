@@ -42,20 +42,30 @@ def create_tray_icon():
     
     return QIcon(pixmap)
 
+def try_notify_existing_instance() -> bool:
+    """Si une instance tourne déjà, lui demande d'afficher son centre de contrôle et retourne True."""
+    import socket, json
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.settimeout(0.3)
+    try:
+        s.connect(("127.0.0.1", 8765))
+        s.close()
+        import websockets, asyncio
+        async def notify():
+            async with websockets.connect("ws://127.0.0.1:8765", open_timeout=0.8) as ws:
+                await ws.send(json.dumps({"action": "show_control_center"}))
+        try:
+            asyncio.run(notify())
+        except Exception:
+            pass
+        return True
+    except Exception:
+        s.close()
+        return False
+
 def main():
-    # Protection instance unique Windows (Named Mutex)
-    import ctypes
-    MUTEX_NAME = "Global\\AntigravityIsland_SingleInstance_Mutex"
-    kernel32 = ctypes.windll.kernel32
-    mutex = kernel32.CreateMutexW(None, False, MUTEX_NAME)
-    last_error = kernel32.GetLastError()
-    ERROR_ALREADY_EXISTS = 183
-    if last_error == ERROR_ALREADY_EXISTS:
-        user32 = ctypes.windll.user32
-        hwnd = user32.FindWindowW(None, "Antigravity Control Center")
-        if hwnd:
-            user32.ShowWindow(hwnd, 9)
-            user32.SetForegroundWindow(hwnd)
+    if try_notify_existing_instance():
+        print("[Antigravity Island] Instance existante notifiée et mise au premier plan.")
         sys.exit(0)
 
     app = QApplication(sys.argv)

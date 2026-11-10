@@ -137,6 +137,10 @@ class IslandWebSocketServer:
                                 "amount": amount
                             }, ensure_ascii=False))
                             continue
+                        elif action in ["show_control_center", "show_settings"]:
+                            self.window.state_change_requested.emit(action, data)
+                            await websocket.send(json.dumps({"status": "success", "action": "show_control_center"}))
+                            continue
 
                         # Transmission thread-safe à l'interface PyQt6
                         self.window.state_change_requested.emit(action, data)

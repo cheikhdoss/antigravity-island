@@ -271,6 +271,11 @@ class IslandWindow(QWidget):
             self.apply_settings({"style_mode": style})
         elif action == "settings":
             self.apply_settings(data.get("settings", {}))
+        elif action in ["show_control_center", "show_settings"]:
+            if getattr(self, "settings_window", None):
+                self.settings_window.show()
+                self.settings_window.raise_()
+                self.settings_window.activateWindow()
         elif action == "point_at":
             x = data.get("x", 500)
             y = data.get("y", 300)
