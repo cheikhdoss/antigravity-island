@@ -104,11 +104,18 @@ class PushToTalkEngine:
         transcription = ""
         is_silent = (not has_audio) or (rms < 3.0 and peak < 20)
 
+        is_status_msg = False
         if has_audio and not is_silent:
             try:
                 transcription = transcribe_audio(wav_path)
                 if transcription:
                     print(f"[PushToTalk] Transcription : '{transcription}'")
+                    # Rétroaction visuelle immédiate : affiche la question entendue sur l'Island
+                    short_q = transcription if len(transcription) <= 36 else (transcription[:33] + "...")
+                    self.window.state_change_requested.emit("set_state", {
+                        "state": "thinking",
+                        "title": f"« {short_q} »"
+                    })
             except Exception as e:
                 print("[PushToTalk] Erreur STT:", e)
 
@@ -117,15 +124,20 @@ class PushToTalkEngine:
         def on_stream_chunk(chunk: str):
             accumulated_chunks.append(chunk)
             streamed = "".join(accumulated_chunks).strip()
+            # Nettoyer les astérisques et balises markdown en cours de frappe
+            streamed = re.sub(r'[*_`]', '', streamed)
             if streamed:
                 self.window.state_change_requested.emit("stream_text", {"text": streamed})
 
         if is_silent:
             response_text = "Microphone inaudible. Maintenez Win + Alt et parlez."
+            is_status_msg = True
         elif transcription:
             response_text = generate_response(transcription, on_chunk=on_stream_chunk)
+            is_status_msg = False
         else:
             response_text = "Je n'ai pas bien compris. Parlez un peu plus près du micro."
+            is_status_msg = True
 
         # 4. Sauvegarde de la requête et de la réponse
         payload = {
@@ -144,7 +156,11 @@ class PushToTalkEngine:
             pass
 
         # 5. Affichage direct et instantané sur le Dynamic Island (sans voix)
-        self.window.state_change_requested.emit("speak", {"text": response_text})
+        self.window.state_change_requested.emit("speak", {
+            "text": response_text,
+            "is_status": is_status_msg,
+            "is_answer": not is_status_msg
+        })
 
     def _handle_combo_up(self, duration: float):
         if self.mode == "hold":

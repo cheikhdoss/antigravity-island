@@ -186,31 +186,27 @@ def transcribe_audio_antigravity(audio_path: str, timeout: float = 6.0) -> str:
             audio_bytes = wf.readframes(wf.getnframes())
 
         send_conn = http.client.HTTPSConnection('127.0.0.1', port, context=ctx, timeout=3.0)
-        chunk_size = 16000  # 500ms
-        seq = 0
-        for i in range(0, len(audio_bytes), chunk_size):
-            chunk = audio_bytes[i:i+chunk_size]
-            chunk_payload = json.dumps({
-                'sessionId': session_id,
-                'data': base64.b64encode(chunk).decode('ascii'),
-                'sequenceNumber': seq
-            }).encode('utf-8')
+        # Envoi en un bloc direct pour éliminer les multiples allers-retours HTTP
+        chunk_payload = json.dumps({
+            'sessionId': session_id,
+            'data': base64.b64encode(audio_bytes).decode('ascii'),
+            'sequenceNumber': 0
+        }).encode('utf-8')
 
-            send_conn.request(
-                'POST',
-                '/exa.language_server_pb.LanguageServerService/SendAudioChunk',
-                body=chunk_payload,
-                headers={
-                    'Content-Type': 'application/json',
-                    'x-codeium-csrf-token': csrf
-                }
-            )
-            send_conn.getresponse().read()
-            seq += 1
+        send_conn.request(
+            'POST',
+            '/exa.language_server_pb.LanguageServerService/SendAudioChunk',
+            body=chunk_payload,
+            headers={
+                'Content-Type': 'application/json',
+                'x-codeium-csrf-token': csrf
+            }
+        )
+        send_conn.getresponse().read()
 
         end_payload = json.dumps({
             'sessionId': session_id,
-            'lastSequenceNumber': seq - 1
+            'lastSequenceNumber': 0
         }).encode('utf-8')
 
         send_conn.request(

@@ -233,9 +233,9 @@ class AgyDaemon:
             self._pending_requests[req_id] = container
 
             system_context = (
-                "Consigne: Tu es l'assistant de l'encoche Dynamic Island sur Windows. "
-                "Réponds IMMÉDIATEMENT en 1 SEULE phrase concise et directe en français, sans réflexion ni préambule. "
-                "Ne mets aucun emoji ni astérisques markdown.\n\n"
+                "Consigne: Tu es l'assistant rapide de l'encoche Dynamic Island sur Windows. "
+                "Réponds DIRECTEMENT en 1 SEULE phrase concise et informative en français. N'utilise aucun outil. "
+                "Pas de préambule, pas d'astérisques markdown ni d'emoji.\n\n"
                 f"Question : {prompt.strip()}"
             )
 

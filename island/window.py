@@ -244,6 +244,15 @@ class IslandWindow(QWidget):
             self.target_w = max(280.0, 70.0 + len(self.minimized_windows) * 44.0)
             self.target_h = 54.0
             self.target_r = 24.0
+        elif state_name == "thinking":
+            target_cfg = Config.STATES[state_name]
+            title = getattr(self, "action_title", "") or ""
+            if title and title != "Analyse en cours...":
+                self.target_w = max(float(target_cfg.width), min(450.0, 90.0 + len(title) * 8.5))
+            else:
+                self.target_w = float(target_cfg.width)
+            self.target_h = float(target_cfg.height)
+            self.target_r = float(target_cfg.radius)
         else:
             target_cfg = Config.STATES[state_name]
             self.target_w = float(target_cfg.width)
@@ -327,9 +336,22 @@ class IslandWindow(QWidget):
                     self.state_change_requested.emit("idle", {})
                 self.voice_engine.speak(self.message_text, callback_on_finish=on_done)
             else:
-                # Mode affichage texte direct sur le Dynamic Island (sans voix) :
-                # Durée de lecture proportionnelle (~55ms/caractère, min 5.0s, max 15s)
-                reading_ms = int(max(5000, min(15000, len(self.message_text) * 55)))
+                # Règle UX stricte demandée par l'utilisateur :
+                # 1. Affirmation/statut court de l'Island (ex: "Je suis prêt", "Microphone inaudible", "Pas bien compris") -> 2 secondes (2000 ms)
+                # 2. Réponse substantielle à une requête -> Reste affichée plus de 5s pour permettre la lecture (base 7s + 50ms/caractère, max 25s)
+                txt_lower = self.message_text.lower().strip()
+                is_status = data.get("is_status", False) or any(kw in txt_lower for kw in [
+                    "inaudible", "pas bien compris", "suis prêt", "suis pret", "à votre écoute",
+                    "a votre ecoute", "analys", "réessayez", "reessayez", "parlez un peu plus",
+                    "prêt !", "pret !"
+                ]) and not data.get("is_answer", False)
+
+                if is_status or (len(self.message_text) <= 45 and not data.get("is_answer", False)):
+                    reading_ms = 2000  # 2 secondes pile pour les affirmations/statuts du island
+                else:
+                    # Plus de 5 secondes pour une vraie réponse à une requête
+                    reading_ms = int(max(7000, min(25000, 6500 + len(self.message_text) * 50)))
+
                 self.reading_timer.start(reading_ms)
         elif action == "audio_power":
             self.audio_power = float(data.get("power", 0.0))
@@ -630,7 +652,8 @@ class IslandWindow(QWidget):
         font = QFont("Segoe UI", 9, QFont.Weight.Medium)
         painter.setFont(font)
         text_rect = QRectF(orb_x + 18.0, rect.top(), rect.width() - 50.0, rect.height())
-        painter.drawText(text_rect, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, "Analyse en cours...")
+        label = getattr(self, "action_title", "") or "Analyse en cours..."
+        painter.drawText(text_rect, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, label)
 
     def _draw_speaking_content(self, painter: QPainter, rect: QRectF):
         header_y = rect.top() + 16.0
