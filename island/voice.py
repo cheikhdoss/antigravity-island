@@ -14,15 +14,17 @@ except Exception:
 class VoiceEngine:
     """
     Moteur de synthèse vocale haute fidélité utilisant Edge-TTS (voix neuronales naturelles Microsoft).
-    Produit une voix humaine fluide et expressive en français, sans aucun robotisme SAPI.
+    Produit une voix humaine fluide, rapide et expressive en français, sans aucun robotisme SAPI.
     Anime simultanément la waveform de l'encoche et gère le retour fluide à l'état de repos.
     """
 
-    DEFAULT_VOICE = "fr-FR-HenriNeural"
+    DEFAULT_VOICE = "fr-FR-VivienneMultilingualNeural"
+    DEFAULT_RATE = "+20%"
 
-    def __init__(self, window_instance=None, voice: str = DEFAULT_VOICE):
+    def __init__(self, window_instance=None, voice: str = DEFAULT_VOICE, rate: str = DEFAULT_RATE):
         self.window = window_instance
         self.voice = voice
+        self.rate = rate
         self.enabled = True
         self.winmm = ctypes.windll.winmm
         self.alias = "island_edge_tts"
@@ -39,6 +41,9 @@ class VoiceEngine:
 
     def set_voice(self, voice_name: str):
         self.voice = voice_name
+
+    def set_rate(self, rate_str: str):
+        self.rate = rate_str
 
     def stop(self):
         """Arrête immédiatement toute lecture audio en cours."""
@@ -77,7 +82,7 @@ class VoiceEngine:
             if HAS_EDGE_TTS:
                 try:
                     async def _gen():
-                        communicate = edge_tts.Communicate(text, self.voice)
+                        communicate = edge_tts.Communicate(text, self.voice, rate=self.rate)
                         await communicate.save(mp3_path)
                     asyncio.run(_gen())
                     success = os.path.exists(mp3_path) and os.path.getsize(mp3_path) > 100

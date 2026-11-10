@@ -28,7 +28,7 @@ try {
     $engine.LoadGrammar($grammar)
 
     $engine.SetInputToWaveFile($AudioPath)
-    $result = $engine.Recognize([System.TimeSpan]::FromSeconds(6))
+    $result = $engine.Recognize([System.TimeSpan]::FromSeconds(15))
     if ($result -and $result.Text) {
         [Console]::Out.WriteLine($result.Text)
     } else {
@@ -69,7 +69,7 @@ def transcribe_audio(audio_path: str) -> str:
             text=True,
             encoding="utf-8",
             errors="replace",
-            timeout=8,
+            timeout=16,
             creationflags=0x08000000  # CREATE_NO_WINDOW : empêche toute fenêtre de console
         )
         if res.stdout:

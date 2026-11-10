@@ -147,6 +147,8 @@ class IslandWindow(QWidget):
             self.voice_enabled = bool(settings["voice_enabled"])
         if "voice_name" in settings and hasattr(self, "voice_engine"):
             self.voice_engine.set_voice(settings["voice_name"])
+        if "voice_rate" in settings and hasattr(self, "voice_engine"):
+            self.voice_engine.set_rate(settings["voice_rate"])
         if "island_visible" in settings:
             if settings["island_visible"]:
                 self.show()

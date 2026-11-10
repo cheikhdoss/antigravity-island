@@ -2,64 +2,32 @@ import os
 import re
 import datetime
 import random
-import subprocess
 import time
+from typing import Optional, Callable
+from island.agy_daemon import AgyDaemon
 
-AGY_PATH = r"C:\Users\pro\AppData\Local\agy\bin\agy.EXE"
-
-def query_agy_llm(user_query: str, timeout: int = 18) -> str:
+def query_agy_llm(user_query: str, timeout: int = 25, on_chunk: Optional[Callable[[str], None]] = None) -> str:
     """
-    Interroge le LLM Antigravity officiel via agy CLI pour obtenir une réponse intelligente.
+    Interroge le LLM Antigravity officiel via le démon ACP persistant (même architecture qu'Open Design).
+    L'instance du modèle reste chaude et vivante en arrière-plan pendant toute la vie de l'app.
     """
-    if not os.path.exists(AGY_PATH):
-        return ""
-
-    system_instruction = (
-        "Consigne: Tu es Antigravity Island, le compagnon desktop intelligent de l'utilisateur. "
-        "Réponds en français de manière directe, naturelle et concise (maximum 1 ou 2 phrases percutantes, adaptées à la voix). "
-        "Ne mets aucun emoji, pas de code ni de markdown lourd.\n"
-        f"Question: {user_query}\n"
-        "Réponse:"
-    )
-
-    cmd = [
-        AGY_PATH,
-        "--new-project",
-        "--print", system_instruction,
-        "--disable-slash-commands",
-        "--effort", "low",
-        "--output-format", "text"
-    ]
-
+    daemon = AgyDaemon.get_instance()
     try:
         t0 = time.time()
-        res = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=timeout,
-            creationflags=0x08000000  # CREATE_NO_WINDOW : aucun clignotement de terminal
-        )
-        if res.returncode == 0 and res.stdout.strip():
-            raw = res.stdout.strip()
-            # Nettoyer les éventuels préfixes "Réponse :" ou guillemets superflus
-            clean = re.sub(r'^(Antigravity\s*:|Réponse\s*:|Ta réponse\s*:)\s*', '', raw, flags=re.IGNORECASE)
-            print(f"[Brain AGY] Réponse LLM générée en {time.time() - t0:.2f}s : '{clean}'")
-            return clean.strip()
-    except subprocess.TimeoutExpired:
-        print(f"[Brain AGY] Timeout après {timeout}s")
+        resp = daemon.ask(user_query, on_chunk=on_chunk, timeout=timeout)
+        if resp:
+            print(f"[Brain AGY] Réponse ACP générée en {time.time() - t0:.2f}s : '{resp}'")
+            return resp
     except Exception as e:
-        print(f"[Brain AGY] Erreur CLI : {e}")
+        print(f"[Brain AGY] Erreur démon : {e}")
 
     return ""
 
-def generate_response(query: str) -> str:
+def generate_response(query: str, on_chunk: Optional[Callable[[str], None]] = None) -> str:
     """
     Moteur conversationnel hybrid pour Antigravity Island.
-    1. Répond instantanément aux requêtes courantes (salutations, heure, date, statut).
-    2. Interroge le modèle agy CLI pour toute question complexe ou ouverte.
+    1. Répond instantanément aux requêtes courantes locales (salutations, heure, date, statut, blague) en 0.01s.
+    2. Interroge le démon persistant agy ACP pour toute question intelligente ou ouverte.
     3. Dispose d'un fallback dynamique élégant en cas d'indisponibilité.
     """
     if not query or not query.strip():
@@ -103,8 +71,8 @@ def generate_response(query: str) -> str:
         ]
         return random.choice(jokes)
 
-    # 6. Appel au LLM Antigravity officiel (agy CLI)
-    llm_resp = query_agy_llm(query, timeout=18)
+    # 6. Appel au démon persistant agy (ACP streamé)
+    llm_resp = query_agy_llm(query, timeout=25, on_chunk=on_chunk)
     if llm_resp:
         return llm_resp
 

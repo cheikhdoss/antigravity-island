@@ -22,6 +22,7 @@ from island.window import IslandWindow
 from island.settings_window import SettingsWindow, load_settings, save_settings
 from island.server import IslandWebSocketServer
 from island.hotkey import PushToTalkEngine
+from island.agy_daemon import AgyDaemon
 
 def create_tray_icon():
     """Crée une icône pour la barre des tâches système Windows (System Tray)."""
@@ -86,6 +87,11 @@ def main():
 
     # Sauvegarde garantie en cas d'arrêt de l'application
     app.aboutToQuit.connect(lambda: save_settings(control_center.settings))
+    app.aboutToQuit.connect(lambda: AgyDaemon.get_instance().stop())
+
+    # Pré-chauffage asynchrone du démon LLM officiel (même architecture qu'Open Design)
+    import threading
+    threading.Thread(target=lambda: AgyDaemon.get_instance(), daemon=True).start()
 
     # Lier les signaux du centre de contrôle à l'île
     control_center.settings_changed.connect(island.apply_settings)

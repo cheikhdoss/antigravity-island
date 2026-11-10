@@ -67,7 +67,8 @@ def load_settings():
         "island_visible": True,
         "ptt_mode": "hybrid",        # "hybrid", "hold", "toggle"
         "voice_enabled": True,       # Synthèse vocale Edge-TTS
-        "voice_name": "fr-FR-HenriNeural",
+        "voice_name": "fr-FR-VivienneMultilingualNeural",
+        "voice_rate": "+20%",
         "llm_backend": "agy",
         "autostart": is_autostart_enabled(),
         "screen_index": 0,
@@ -557,11 +558,13 @@ class SettingsWindow(QWidget):
         row_vname.addStretch()
         self.combo_voice = QComboBox()
         self.combo_voice.blockSignals(True)
-        self.combo_voice.addItem("Henri (Naturel - Homme)", "fr-FR-HenriNeural")
-        self.combo_voice.addItem("Vivienne (Naturel - Femme)", "fr-FR-VivienneMultilingualNeural")
+        self.combo_voice.addItem("Vivienne (Ultra-Naturel & Rapide - Femme)", "fr-FR-VivienneMultilingualNeural")
+        self.combo_voice.addItem("Remy (Ultra-Naturel - Homme)", "fr-FR-RemyMultilingualNeural")
+        self.combo_voice.addItem("Henri (Expressif - Homme)", "fr-FR-HenriNeural")
         self.combo_voice.addItem("Denise (Expressif - Femme)", "fr-FR-DeniseNeural")
+        self.combo_voice.addItem("Eloise (Douce - Femme)", "fr-FR-EloiseNeural")
 
-        cur_v = self.settings.get("voice_name", "fr-FR-HenriNeural")
+        cur_v = self.settings.get("voice_name", "fr-FR-VivienneMultilingualNeural")
         idx_v = self.combo_voice.findData(cur_v)
         if idx_v >= 0:
             self.combo_voice.setCurrentIndex(idx_v)
@@ -569,6 +572,26 @@ class SettingsWindow(QWidget):
         self.combo_voice.currentIndexChanged.connect(self._on_voice_name_changed)
         row_vname.addWidget(self.combo_voice)
         layout_ai.addLayout(row_vname)
+
+        # Vitesse d'élocution
+        row_vrate = QHBoxLayout()
+        row_vrate.addWidget(QLabel("Débit / Vitesse :"))
+        row_vrate.addStretch()
+        self.combo_rate = QComboBox()
+        self.combo_rate.blockSignals(True)
+        self.combo_rate.addItem("Rapide & Naturel (+20%)", "+20%")
+        self.combo_rate.addItem("Modéré (+10%)", "+10%")
+        self.combo_rate.addItem("Standard (+0%)", "+0%")
+        self.combo_rate.addItem("Très dynamique (+30%)", "+30%")
+
+        cur_r = self.settings.get("voice_rate", "+20%")
+        idx_r = self.combo_rate.findData(cur_r)
+        if idx_r >= 0:
+            self.combo_rate.setCurrentIndex(idx_r)
+        self.combo_rate.blockSignals(False)
+        self.combo_rate.currentIndexChanged.connect(self._on_voice_rate_changed)
+        row_vrate.addWidget(self.combo_rate)
+        layout_ai.addLayout(row_vrate)
 
         # Bouton tester la voix
         btn_test_v = QPushButton("Écouter un exemple de voix")
@@ -726,12 +749,23 @@ class SettingsWindow(QWidget):
         self.settings_changed.emit(self.settings)
         self._flash_saved()
 
+    def _on_voice_rate_changed(self, idx: int):
+        r = self.combo_rate.currentData()
+        self.settings["voice_rate"] = r
+        save_settings(self.settings)
+        self.settings_changed.emit(self.settings)
+        self._flash_saved()
+
     def _test_voice(self):
         if self.island:
-            self.island.set_state("speaking", {"text": "Bonjour ! Je suis Antigravity, votre compagnon intelligent."})
+            v_name = self.settings.get("voice_name", "fr-FR-VivienneMultilingualNeural")
+            v_rate = self.settings.get("voice_rate", "+20%")
             if hasattr(self.island, "voice_engine"):
+                self.island.voice_engine.set_voice(v_name)
+                self.island.voice_engine.set_rate(v_rate)
+                self.island.set_state("speaking", {"text": "Bonjour ! La synthèse vocale est rapide, naturelle et fluide."})
                 self.island.voice_engine.speak(
-                    "Bonjour ! Je suis Antigravity, votre compagnon intelligent.",
+                    "Bonjour ! La synthèse vocale est rapide, naturelle et fluide.",
                     callback_on_finish=lambda: self.island.set_state("idle")
                 )
 
