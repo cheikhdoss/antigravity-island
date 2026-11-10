@@ -42,31 +42,19 @@ def create_tray_icon():
     
     return QIcon(pixmap)
 
-def try_notify_existing_instance() -> bool:
-    """Si une instance tourne déjà, lui demande d'afficher son centre de contrôle et retourne True."""
-    import socket, json
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.settimeout(0.3)
+import subprocess
+
+def kill_other_instances():
+    """Ferme toute ancienne instance résiduelle pour garantir un démarrage propre et immédiat."""
     try:
-        s.connect(("127.0.0.1", 8765))
-        s.close()
-        import websockets, asyncio
-        async def notify():
-            async with websockets.connect("ws://127.0.0.1:8765", open_timeout=0.8) as ws:
-                await ws.send(json.dumps({"action": "show_control_center"}))
-        try:
-            asyncio.run(notify())
-        except Exception:
-            pass
-        return True
+        cur_pid = os.getpid()
+        cmd = f'powershell -WindowStyle Hidden -Command "Get-Process -Name AntigravityIsland -ErrorAction SilentlyContinue | Where-Object {{ $_.Id -ne {cur_pid} }} | Stop-Process -Force -ErrorAction SilentlyContinue"'
+        subprocess.run(cmd, shell=True, creationflags=0x08000000)
     except Exception:
-        s.close()
-        return False
+        pass
 
 def main():
-    if try_notify_existing_instance():
-        print("[Antigravity Island] Instance existante notifiée et mise au premier plan.")
-        sys.exit(0)
+    kill_other_instances()
 
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
@@ -86,6 +74,8 @@ def main():
     control_center = SettingsWindow(island_window=island)
     island.settings_window = control_center
     control_center.show()
+    control_center.raise_()
+    control_center.activateWindow()
 
     # Sauvegarde garantie en cas d'arrêt de l'application
     app.aboutToQuit.connect(lambda: save_settings(control_center.settings))
