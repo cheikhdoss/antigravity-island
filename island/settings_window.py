@@ -74,22 +74,28 @@ def load_settings():
         try:
             with open(settings_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
-                default_settings.update(data)
-                print(f"[Settings] Paramètres chargés depuis {settings_path}")
+                if isinstance(data, dict):
+                    default_settings.update(data)
+                print(f"[Settings] Paramètres chargés avec succès depuis {settings_path}")
         except Exception as e:
-            print("Erreur lecture settings:", e)
+            print("[Settings] Erreur lecture settings:", e)
     else:
         save_settings(default_settings)
     return default_settings
 
 def save_settings(settings):
+    """Sauvegarde atomique et garantie sans perte de données sur disque."""
     try:
         settings_path = get_settings_file_path()
-        with open(settings_path, "w", encoding="utf-8") as f:
-            json.dump(settings, f, indent=2)
+        tmp_path = settings_path + ".tmp"
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(settings, f, indent=2, ensure_ascii=False)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_path, settings_path)
         print(f"[Settings] Paramètres enregistrés dans {settings_path}")
     except Exception as e:
-        print("Erreur sauvegarde settings:", e)
+        print("[Settings] Erreur sauvegarde settings:", e)
 
 class SettingsWindow(QWidget):
     """
@@ -184,12 +190,17 @@ class SettingsWindow(QWidget):
                 padding: 6px 12px;
                 color: #ffffff;
                 font-size: 12px;
-                font-weight: 500;
+                font-weight: 600;
                 min-width: 220px;
+                selection-background-color: #0284c7;
+                selection-color: #ffffff;
             }
             QComboBox:hover {
                 border-color: #38bdf8;
                 background-color: #243247;
+            }
+            QComboBox:focus {
+                border-color: #38bdf8;
             }
             QComboBox::drop-down {
                 subcontrol-origin: padding;
@@ -220,7 +231,7 @@ class SettingsWindow(QWidget):
             QComboBox QAbstractItemView::item {
                 min-height: 28px;
                 padding: 4px 8px;
-                color: #f8fafc;
+                color: #ffffff;
             }
             QComboBox QAbstractItemView::item:selected {
                 background-color: #0284c7;
@@ -265,6 +276,10 @@ class SettingsWindow(QWidget):
         header_layout.addLayout(header_text)
         header_layout.addStretch()
 
+        self.saved_badge = QLabel("✓ Paramètres synchronisés")
+        self.saved_badge.setStyleSheet("color: #38bdf8; font-size: 11px; font-weight: 500; padding-right: 6px;")
+        header_layout.addWidget(self.saved_badge)
+
         status_badge = QLabel("  ● Actif (8765)  ")
         status_badge.setStyleSheet("background-color: rgba(34, 197, 94, 0.15); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.3); border-radius: 12px; font-size: 11px; font-weight: 600; padding: 4px 8px;")
         header_layout.addWidget(status_badge)
@@ -296,9 +311,10 @@ class SettingsWindow(QWidget):
         row_style.addWidget(QLabel("Style de l'encoche :"))
         row_style.addStretch()
         self.combo_style = QComboBox()
+        self.combo_style.blockSignals(True)
         self.combo_style.addItems(["Dynamic Island (Pilule moderne)", "Encoche iPhone X (Notch avec cornes)"])
-        if self.settings.get("style_mode") == "iphonex":
-            self.combo_style.setCurrentIndex(1)
+        self.combo_style.setCurrentIndex(1 if self.settings.get("style_mode") == "iphonex" else 0)
+        self.combo_style.blockSignals(False)
         self.combo_style.currentIndexChanged.connect(self._on_style_changed)
         row_style.addWidget(self.combo_style)
         layout_disp.addLayout(row_style)
@@ -308,9 +324,10 @@ class SettingsWindow(QWidget):
         row_pos.addWidget(QLabel("Fixation :"))
         row_pos.addStretch()
         self.combo_mode = QComboBox()
+        self.combo_mode.blockSignals(True)
         self.combo_mode.addItems(["Collé au plus près du bord (Notch Y=0)", "Flottant (Capsule détachée)"])
-        if self.settings.get("position_mode") == "floating":
-            self.combo_mode.setCurrentIndex(1)
+        self.combo_mode.setCurrentIndex(1 if self.settings.get("position_mode") == "floating" else 0)
+        self.combo_mode.blockSignals(False)
         self.combo_mode.currentIndexChanged.connect(self._on_mode_changed)
         row_pos.addWidget(self.combo_mode)
         layout_disp.addLayout(row_pos)
@@ -320,12 +337,16 @@ class SettingsWindow(QWidget):
         row_align.addWidget(QLabel("Alignement :"))
         row_align.addStretch()
         self.combo_align = QComboBox()
+        self.combo_align.blockSignals(True)
         self.combo_align.addItems(["Centre (Recommandé)", "Gauche", "Droite"])
         cur_align = self.settings.get("alignment", "center")
         if cur_align == "left":
             self.combo_align.setCurrentIndex(1)
         elif cur_align == "right":
             self.combo_align.setCurrentIndex(2)
+        else:
+            self.combo_align.setCurrentIndex(0)
+        self.combo_align.blockSignals(False)
         self.combo_align.currentIndexChanged.connect(self._on_align_changed)
         row_align.addWidget(self.combo_align)
         layout_disp.addLayout(row_align)
@@ -335,6 +356,7 @@ class SettingsWindow(QWidget):
         row_screen.addWidget(QLabel("Écran d'affichage :"))
         row_screen.addStretch()
         self.combo_screen = QComboBox()
+        self.combo_screen.blockSignals(True)
         screens = QApplication.screens()
         for i, sc in enumerate(screens):
             geo = sc.geometry()
@@ -342,6 +364,7 @@ class SettingsWindow(QWidget):
         cur_sc = int(self.settings.get("screen_index", 0))
         if 0 <= cur_sc < len(screens):
             self.combo_screen.setCurrentIndex(cur_sc)
+        self.combo_screen.blockSignals(False)
         self.combo_screen.currentIndexChanged.connect(self._on_screen_changed)
         row_screen.addWidget(self.combo_screen)
         layout_disp.addLayout(row_screen)
@@ -366,7 +389,9 @@ class SettingsWindow(QWidget):
         layout_w.addWidget(self.lbl_w_val)
         self.slider_w = QSlider(Qt.Orientation.Horizontal)
         self.slider_w.setRange(70, 220)
+        self.slider_w.blockSignals(True)
         self.slider_w.setValue(int(self.settings.get("idle_width", 110)))
+        self.slider_w.blockSignals(False)
         self.slider_w.valueChanged.connect(self._on_width_changed)
         layout_w.addWidget(self.slider_w)
         layout_size.addLayout(layout_w)
@@ -379,7 +404,9 @@ class SettingsWindow(QWidget):
         layout_h.addWidget(self.lbl_h_val)
         self.slider_h = QSlider(Qt.Orientation.Horizontal)
         self.slider_h.setRange(22, 45)
+        self.slider_h.blockSignals(True)
         self.slider_h.setValue(int(self.settings.get("idle_height", 30)))
+        self.slider_h.blockSignals(False)
         self.slider_h.valueChanged.connect(self._on_height_changed)
         layout_h.addWidget(self.slider_h)
         layout_size.addLayout(layout_h)
@@ -475,6 +502,7 @@ class SettingsWindow(QWidget):
         row_ptt_mode.addWidget(QLabel("Comportement :"))
         row_ptt_mode.addStretch()
         self.combo_ptt = QComboBox()
+        self.combo_ptt.blockSignals(True)
         self.combo_ptt.addItems([
             "Hybride (Tap court = Bascule, Maintien = Parler)",
             "Maintien enfonce (Push-to-Talk pur)",
@@ -482,6 +510,7 @@ class SettingsWindow(QWidget):
         ])
         mode_map = {"hybrid": 0, "hold": 1, "toggle": 2}
         self.combo_ptt.setCurrentIndex(mode_map.get(self.settings.get("ptt_mode", "hybrid"), 0))
+        self.combo_ptt.blockSignals(False)
         self.combo_ptt.currentIndexChanged.connect(self._on_ptt_mode_changed)
         row_ptt_mode.addWidget(self.combo_ptt)
         layout_ptt.addLayout(row_ptt_mode)
@@ -502,7 +531,9 @@ class SettingsWindow(QWidget):
         row_boot.addWidget(QLabel("Lancer au démarrage de Windows :"))
         row_boot.addStretch()
         self.check_autostart = QCheckBox()
+        self.check_autostart.blockSignals(True)
         self.check_autostart.setChecked(is_autostart_enabled())
+        self.check_autostart.blockSignals(False)
         self.check_autostart.setStyleSheet("""
             QCheckBox::indicator {
                 width: 18px;
@@ -544,49 +575,64 @@ class SettingsWindow(QWidget):
         footer_layout.addWidget(quit_btn)
         main_layout.addLayout(footer_layout)
 
+    def closeEvent(self, event):
+        """Assure la sauvegarde automatique persistante lors de la fermeture de la fenêtre."""
+        save_settings(self.settings)
+        super().closeEvent(event)
+
+    def _flash_saved(self):
+        """Notification visuelle discrète de sauvegarde réussie."""
+        if hasattr(self, "saved_badge"):
+            self.saved_badge.setText("✓ Sauvegardé")
+            self.saved_badge.setStyleSheet("color: #4ade80; font-size: 11px; font-weight: 600;")
+            QTimer.singleShot(1800, lambda: hasattr(self, "saved_badge") and self.saved_badge.setText("✓ Paramètres synchronisés") or self.saved_badge.setStyleSheet("color: #38bdf8; font-size: 11px; font-weight: 500;"))
+
     def _on_style_changed(self, idx: int):
         style = "iphonex" if idx == 1 else "island"
         self.settings["style_mode"] = style
         if style == "iphonex":
-            # L'encoche iPhone X s'ancre naturellement au bord de l'écran (Y=0)
+            # L'encoche iPhone X s'ancre naturellement au bord supérieur (Y=0)
+            self.combo_mode.blockSignals(True)
             self.combo_mode.setCurrentIndex(0)
+            self.combo_mode.blockSignals(False)
             self.settings["position_mode"] = "notch"
-            # Donner une largeur d'encoche iPhone X harmonieuse si elle était trop petite
-            if self.settings.get("idle_width", 110) < 140:
-                self.slider_w.setValue(160)
-                self.settings["idle_width"] = 160
-                self.lbl_w_val.setText("160 px")
         save_settings(self.settings)
         self.settings_changed.emit(self.settings)
+        self._flash_saved()
 
     def _on_mode_changed(self, idx: int):
         mode = "floating" if idx == 1 else "notch"
         self.settings["position_mode"] = mode
         save_settings(self.settings)
         self.settings_changed.emit(self.settings)
+        self._flash_saved()
 
     def _on_align_changed(self, idx: int):
         align_map = {0: "center", 1: "left", 2: "right"}
         self.settings["alignment"] = align_map.get(idx, "center")
         save_settings(self.settings)
         self.settings_changed.emit(self.settings)
+        self._flash_saved()
 
     def _on_width_changed(self, val: int):
         self.lbl_w_val.setText(f"{val} px")
         self.settings["idle_width"] = val
         save_settings(self.settings)
         self.settings_changed.emit(self.settings)
+        self._flash_saved()
 
     def _on_height_changed(self, val: int):
         self.lbl_h_val.setText(f"{val} px")
         self.settings["idle_height"] = val
         save_settings(self.settings)
         self.settings_changed.emit(self.settings)
+        self._flash_saved()
 
     def _set_accent_color(self, hex_color: str):
         self.settings["accent_color"] = hex_color
         save_settings(self.settings)
         self.settings_changed.emit(self.settings)
+        self._flash_saved()
 
     def _pick_custom_color(self):
         col = QColorDialog.getColor(QColor(self.settings.get("accent_color", "#38bdf8")), self, "Choisir une couleur")
@@ -598,16 +644,19 @@ class SettingsWindow(QWidget):
         self.settings["ptt_mode"] = modes[idx] if idx < len(modes) else "hybrid"
         save_settings(self.settings)
         self.settings_changed.emit(self.settings)
+        self._flash_saved()
 
     def _on_screen_changed(self, idx: int):
         self.settings["screen_index"] = idx
         save_settings(self.settings)
         self.settings_changed.emit(self.settings)
+        self._flash_saved()
 
     def _on_autostart_toggled(self, checked: bool):
         set_autostart(checked)
         self.settings["autostart"] = checked
         save_settings(self.settings)
+        self._flash_saved()
 
     def _on_toggle_clicked(self):
         new_val = not self.settings.get("island_visible", True)
@@ -615,3 +664,4 @@ class SettingsWindow(QWidget):
         save_settings(self.settings)
         self.toggle_btn.setText("Masquer l'encoche" if new_val else "Afficher l'encoche")
         self.toggle_island_requested.emit(new_val)
+        self._flash_saved()

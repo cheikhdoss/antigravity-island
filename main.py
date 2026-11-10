@@ -43,7 +43,23 @@ def create_tray_icon():
     return QIcon(pixmap)
 
 def main():
+    # Protection instance unique Windows (Named Mutex)
+    import ctypes
+    MUTEX_NAME = "Global\\AntigravityIsland_SingleInstance_Mutex"
+    kernel32 = ctypes.windll.kernel32
+    mutex = kernel32.CreateMutexW(None, False, MUTEX_NAME)
+    last_error = kernel32.GetLastError()
+    ERROR_ALREADY_EXISTS = 183
+    if last_error == ERROR_ALREADY_EXISTS:
+        user32 = ctypes.windll.user32
+        hwnd = user32.FindWindowW(None, "Antigravity Control Center")
+        if hwnd:
+            user32.ShowWindow(hwnd, 9)
+            user32.SetForegroundWindow(hwnd)
+        sys.exit(0)
+
     app = QApplication(sys.argv)
+    app.setStyle("Fusion")
     app.setApplicationName("Antigravity Island")
     app.setQuitOnLastWindowClosed(False)
 
@@ -60,6 +76,9 @@ def main():
     control_center = SettingsWindow(island_window=island)
     island.settings_window = control_center
     control_center.show()
+
+    # Sauvegarde garantie en cas d'arrêt de l'application
+    app.aboutToQuit.connect(lambda: save_settings(control_center.settings))
 
     # Lier les signaux du centre de contrôle à l'île
     control_center.settings_changed.connect(island.apply_settings)

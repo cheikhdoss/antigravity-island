@@ -5,13 +5,14 @@ import threading
 from pynput import keyboard
 from island.audio_recorder import AudioRecorder
 from island.stt import transcribe_audio
+from island.brain import generate_response
 
 class PushToTalkEngine:
     """
     Moteur Push-to-Talk global avec combinaison de touches Windows + Alt.
     Détecte les touches n'importe où sous Windows, même si l'application est en arrière-plan.
     Supporte les modes Hybride, Maintien (Hold) et Bascule (Toggle).
-    Enregistre le micro et transcrit la voix pour Antigravity.
+    Enregistre le micro, transcrit la voix et génère une réponse instantanée.
     """
 
     def __init__(self, window_instance, mode: str = "hybrid"):
@@ -107,33 +108,26 @@ class PushToTalkEngine:
         # 1. Arrêt de l'enregistrement et sauvegarde audio
         has_audio = self.recorder.stop_recording(wav_path)
 
-        # 2. Capture de l'écran simultanée
-        screen_file = None
-        try:
-            from island.vision import capture_screen
-            shot = capture_screen()
-            screen_file = shot.get("file_path")
-            print("[PushToTalk] Capture d'ecran automatique effectuee en arriere-plan.")
-        except Exception as e:
-            print("[PushToTalk] Erreur capture d'ecran:", e)
-
-        # 3. Transcription vocale native Windows
+        # 2. Transcription vocale native Windows
         transcription = ""
         if has_audio:
             try:
                 transcription = transcribe_audio(wav_path)
                 if transcription:
-                    print(f"[PushToTalk] Transcription reussie : '{transcription}'")
+                    print(f"[PushToTalk] Transcription : '{transcription}'")
             except Exception as e:
                 print("[PushToTalk] Erreur STT:", e)
 
-        # 4. Sauvegarde permanente de la requête pour Antigravity
+        # 3. Génération de la réponse conversationnelle
+        response_text = generate_response(transcription)
+
+        # 4. Sauvegarde de la requête et de la réponse
         payload = {
             "timestamp": time.time(),
-            "text": transcription,
+            "query": transcription,
+            "response": response_text,
             "has_audio": has_audio,
-            "wav_path": wav_path if has_audio else None,
-            "screenshot_path": screen_file
+            "wav_path": wav_path if has_audio else None
         }
         try:
             with open(query_path, "w", encoding="utf-8") as f:
@@ -141,17 +135,12 @@ class PushToTalkEngine:
         except Exception:
             pass
 
-        # 5. Affichage visuel sur l'encoche
-        if transcription:
-            self.window.state_change_requested.emit("speak", {"text": f"Reçu : {transcription}"})
-            time.sleep(3.2)
-            self.window.state_change_requested.emit("set_state", {"state": "idle"})
-        else:
-            # Si aucun mot n'a été transcrit mais que l'audio/capture a été pris
-            msg = "Capture enregistrée" if has_audio else "Aucun son capté"
-            self.window.state_change_requested.emit("speak", {"text": msg})
-            time.sleep(2.0)
-            self.window.state_change_requested.emit("set_state", {"state": "idle"})
+        # 5. Réponse affichée directement sur l'encoche
+        self.window.state_change_requested.emit("speak", {"text": response_text})
+        
+        # Maintien de l'affichage de la réponse (4.5s) avant retour fluide au repos
+        time.sleep(4.5)
+        self.window.state_change_requested.emit("set_state", {"state": "idle"})
 
     def _handle_combo_up(self, duration: float):
         if self.mode == "hold":
