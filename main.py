@@ -19,7 +19,7 @@ from PyQt6.QtGui import QIcon, QPixmap, QPainter, QColor, QBrush
 from PyQt6.QtCore import Qt
 
 from island.window import IslandWindow
-from island.settings_window import SettingsWindow, load_settings
+from island.settings_window import SettingsWindow, load_settings, save_settings
 from island.server import IslandWebSocketServer
 from island.hotkey import PushToTalkEngine
 
@@ -47,9 +47,14 @@ import subprocess
 def kill_other_instances():
     """Ferme toute ancienne instance résiduelle pour garantir un démarrage propre et immédiat."""
     try:
+        import psutil
         cur_pid = os.getpid()
-        cmd = f'powershell -WindowStyle Hidden -Command "Get-Process -Name AntigravityIsland -ErrorAction SilentlyContinue | Where-Object {{ $_.Id -ne {cur_pid} }} | Stop-Process -Force -ErrorAction SilentlyContinue"'
-        subprocess.run(cmd, shell=True, creationflags=0x08000000)
+        for proc in psutil.process_iter(['pid', 'name']):
+            if proc.info['pid'] != cur_pid and proc.info['name'] and 'antigravityisland' in proc.info['name'].lower():
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
     except Exception:
         pass
 
