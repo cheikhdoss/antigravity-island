@@ -135,6 +135,20 @@ def capture_screen_base64() -> Optional[str]:
             return f"data:image/jpeg;base64,{b64_data}"
         except Exception as e2:
             print("[Brain Vision] Erreur capture écran PIL:", e2)
+
+        try:
+            appdata = os.environ.get("APPDATA", os.path.expanduser("~"))
+            latest = os.path.join(appdata, "AntigravityIsland", "screenshots", "screen_latest.png")
+            if os.path.exists(latest):
+                from PIL import Image
+                with Image.open(latest) as img:
+                    img.thumbnail((1280, 720))
+                    buf = io.BytesIO()
+                    img.convert("RGB").save(buf, format="JPEG", quality=80)
+                    b64_data = base64.b64encode(buf.getvalue()).decode("utf-8")
+                    return f"data:image/jpeg;base64,{b64_data}"
+        except Exception as e3:
+            print("[Brain Vision] Erreur capture fallback fichier:", e3)
     return None
 
 def query_vision_model(prompt: str, on_chunk: Optional[Callable[[str], None]] = None) -> str:
@@ -584,13 +598,35 @@ def generate_response(query: str, on_chunk: Optional[Callable[[str], None]] = No
         print(f"[Brain Harness²] Exception : {e}")
 
     # 9. Vision et Lecture de l'écran / Diagramme / Schéma
-    is_vision_query = any(w in q for w in [
-        "à l'écran", "a l'ecran", "mon écran", "mon ecran", "ce qui est affiché",
-        "regarde l'écran", "regarde l'ecran", "que vois-tu", "qu'est-ce qu'il y a",
-        "lis ce qui", "décris l'écran", "decris l'ecran", "décris ce que tu vois",
-        "decris ce que tu vois", "diagramme", "schéma", "schema", "analyse l'écran",
-        "analyse l'ecran", "qu'est-ce que tu vois", "décris", "decris"
-    ])
+    def is_visual_inspection_query(text: str) -> bool:
+        import unicodedata
+        t_norm = unicodedata.normalize('NFD', text.lower())
+        norm = ''.join(c for c in t_norm if unicodedata.category(c) != 'Mn')
+        norm = re.sub(r'[\'’\-]', ' ', norm)
+        norm = ' '.join(norm.split())
+
+        if any(m in norm for m in ['quel est le modele', 'quel modele', 'quelle est le model', 'quel est le model', 'modele de vision', 'model de vision']):
+            return False
+
+        has_screen = any(w in norm for w in ['ecran', 'screen'])
+        has_visual = any(w in norm for w in [
+            'voi', 'voit', 'vois', 'regard', 'affich', 'pass', 'montr', 'lis', 'lit',
+            'decri', 'analys', 'expliqu', 'qu est ce', 'c est quoi', 'ouvert'
+        ])
+        if has_screen and has_visual:
+            return True
+
+        direct_patterns = [
+            'que vois tu', 'que voit tu', 'tu vois quoi', 'tu voit quoi',
+            'qu est ce que tu vois', 'qu est ce que tu voit', 'ce que tu vois', 'ce que tu voit',
+            'ce qui se passe', 'ce qui ce passe', 'diagramme', 'schema',
+            'qu est ce qu il y a', 'qu est ce qui est ecrit', 'qu est ce qui est affiche',
+            'qui est affiche', 'ce qui est affiche', 'decris l ecran', 'decris mon ecran',
+            'decris ce que tu vois', 'decris ce que tu voit', 'analyse l ecran', 'analyse mon ecran'
+        ]
+        return any(p in norm for p in direct_patterns)
+
+    is_vision_query = is_visual_inspection_query(query)
     if is_vision_query:
         vis_res = query_vision_model(query, on_chunk=on_chunk)
         if vis_res:
