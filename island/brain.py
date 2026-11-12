@@ -184,25 +184,36 @@ def query_vision_model(prompt: str, on_chunk: Optional[Callable[[str], None]] = 
         "Donne une réponse claire, directe et naturelle en français en 1 à 2 phrases percutantes, sans bavardage superflu."
     )
 
+    # Récupération de l'historique conversationnel récent DeepTalk pour contexte multi-tours
+    prev_turns = []
+    try:
+        from island.deeptalk import DeepTalk
+        dt = DeepTalk.get_instance()
+        with dt._lock:
+            for m in dt.history[-6:]:
+                prev_turns.append({"role": m["role"], "content": m["content"]})
+    except Exception:
+        pass
+
     if v_prov == "agnes":
         # 1. Agnes AI 3.0 Flash Vision (~1.0s)
         headers = {
             "Authorization": f"Bearer {AGNES_API_KEY}",
             "Content-Type": "application/json"
         }
+        vision_messages = [{"role": "system", "content": system_prompt}]
+        vision_messages.extend(prev_turns)
+        vision_messages.append({
+            "role": "user",
+            "content": [
+                {"type": "text", "text": prompt},
+                {"type": "image_url", "image_url": {"url": data_url}}
+            ]
+        })
         payload = {
             "model": "agnes-3.0-flash",
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": prompt},
-                        {"type": "image_url", "image_url": {"url": data_url}}
-                    ]
-                }
-            ],
-            "max_tokens": 200,
+            "messages": vision_messages,
+            "max_tokens": 350,
             "temperature": 0.2
         }
         try:
@@ -220,18 +231,18 @@ def query_vision_model(prompt: str, on_chunk: Optional[Callable[[str], None]] = 
         "Authorization": f"Bearer {NIM_API_KEY}",
         "Content-Type": "application/json"
     }
+    vision_messages = [{"role": "system", "content": system_prompt}]
+    vision_messages.extend(prev_turns)
+    vision_messages.append({
+        "role": "user",
+        "content": [
+            {"type": "text", "text": prompt},
+            {"type": "image_url", "image_url": {"url": data_url}}
+        ]
+    })
     payload = {
         "model": "nvidia/nemotron-3.5-super-vl-120b-a12b",
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": prompt},
-                    {"type": "image_url", "image_url": {"url": data_url}}
-                ]
-            }
-        ],
+        "messages": vision_messages,
         "max_tokens": 400,
         "temperature": 0.2
     }
@@ -624,7 +635,31 @@ def generate_response(query: str, on_chunk: Optional[Callable[[str], None]] = No
             'qui est affiche', 'ce qui est affiche', 'decris l ecran', 'decris mon ecran',
             'decris ce que tu vois', 'decris ce que tu voit', 'analyse l ecran', 'analyse mon ecran'
         ]
-        return any(p in norm for p in direct_patterns)
+        if any(p in norm for p in direct_patterns):
+            return True
+
+        # Suivi contextuel : si la conversation récente parlait de l'écran/QCM et que la requête demande une réponse/choix
+        try:
+            from island.deeptalk import DeepTalk
+            dt = DeepTalk.get_instance()
+            with dt._lock:
+                if dt.history:
+                    last_msg = dt.history[-1]["content"].lower()
+                    last_user = dt.history[-2]["content"].lower() if len(dt.history) >= 2 else ""
+                    was_about_screen = any(w in last_msg or w in last_user for w in ["écran", "ecran", "qcm", "capture", "aws", "fenêtre", "navigateur", "affiche"])
+                    if was_about_screen:
+                        is_followup_answer = any(w in norm for w in [
+                            "reponse", "bonne reponse", "choisir", "aide moi a choisir", "aide moi",
+                            "laquelle", "lequel", "quelle option", "option a", "option b", "option c",
+                            "choix", "exercice", "question"
+                        ])
+                        if is_followup_answer:
+                            print("[Brain Vision] Suivi contextuel activé : la question précédente portait sur l'écran.")
+                            return True
+        except Exception:
+            pass
+
+        return False
 
     is_vision_query = is_visual_inspection_query(query)
     if is_vision_query:

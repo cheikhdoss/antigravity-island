@@ -1,5 +1,6 @@
 import sys
 import os
+import time
 
 # Redirection sécurisée des flux standards vers %APPDATA%\AntigravityIsland pour PyInstaller --windowed
 appdata_dir = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "AntigravityIsland")
@@ -81,9 +82,10 @@ def kill_other_instances():
         import psutil
         cur_pid = os.getpid()
         parent_pid = os.getppid()
-        for proc in psutil.process_iter(['pid', 'name']):
+        for proc in psutil.process_iter(['pid', 'name', 'ppid']):
             pid = proc.info['pid']
-            if pid != cur_pid and pid != parent_pid and proc.info['name'] and 'antigravityisland' in proc.info['name'].lower():
+            ppid = proc.info.get('ppid')
+            if pid != cur_pid and pid != parent_pid and ppid != cur_pid and proc.info['name'] and 'antigravityisland' in proc.info['name'].lower():
                 try:
                     proc.kill()
                 except Exception:
