@@ -3,6 +3,7 @@ import time
 import wave
 import ctypes
 import collections
+import threading
 import numpy as np
 
 try:
@@ -44,7 +45,7 @@ class AudioRecorder:
         self._init_stream()
 
     def _ensure_mic_unmuted_quick(self):
-        """Vérification rapide du volume micro sans bloquer le thread principal."""
+        """Vérification rapide du volume micro sans bloquer le thread principal ni forcer la saturation."""
         if not HAS_PYCAW:
             return
         try:
@@ -55,8 +56,9 @@ class AudioRecorder:
                 if vol.GetMute():
                     vol.SetMute(0, None)
                 cur_lvl = vol.GetMasterVolumeLevelScalar()
-                if cur_lvl < 0.85:
-                    vol.SetMasterVolumeLevelScalar(1.0, None)
+                # Uniquement si le micro est anormalement bas (< 30%)
+                if cur_lvl < 0.30:
+                    vol.SetMasterVolumeLevelScalar(0.75, None)
         except Exception:
             pass
 
@@ -129,16 +131,27 @@ class AudioRecorder:
             print("[AudioRecorder] Erreur winmm start:", e)
             self.is_recording = False
 
-    def stop_recording(self, output_path: str) -> bool:
+    def _save_wav_async(self, file_path: str, pcm_bytes: bytes):
+        """Sauvegarde du fichier WAV en tâche de fond pour ne jamais ralentir le flux vocal."""
+        try:
+            with wave.open(file_path, 'wb') as wf:
+                wf.setnchannels(1)
+                wf.setsampwidth(2)
+                wf.setframerate(self.sample_rate)
+                wf.writeframes(pcm_bytes)
+        except Exception as e:
+            print("[AudioRecorder] Erreur écriture async WAV :", e)
+
+    def stop_recording(self, output_path: str = None) -> bool:
         """
-        Arrête l'enregistrement, élague les silences et sauvegarde le fichier WAV.
+        Arrête l'enregistrement, élague les silences et met à disposition l'audio en mémoire vive.
+        Sauvegarde sur disque en arrière-plan (latence zéro I/O).
         """
         if not self.is_recording:
             return False
 
         self.is_recording = False
-        abs_path = os.path.abspath(output_path)
-        os.makedirs(os.path.dirname(abs_path), exist_ok=True)
+        self.last_pcm_bytes = None
 
         if not self.using_fallback and self.stream:
             if not self.frames:
@@ -152,37 +165,27 @@ class AudioRecorder:
                 self.last_rms = float(np.sqrt(np.mean(audio_data.astype(np.float64)**2)))
                 self.last_peak = int(np.max(np.abs(audio_data)))
 
-                # Élagage adaptatif des silences pour un envoi ultra-rapide au STT
-                flat = np.abs(audio_data.flatten())
-                thresh = max(180, int(self.last_peak * 0.08))
-                non_silent = np.where(flat > thresh)[0]
-                if len(non_silent) > 0:
-                    start_pad = max(0, non_silent[0] - int(self.sample_rate * 0.15))
-                    end_pad = min(len(audio_data), non_silent[-1] + int(self.sample_rate * 0.15))
-                    clean_data = audio_data[start_pad:end_pad]
+                # Préserver l'intégralité du signal naturel (aucun rognage destructif qui coupe les syllabes)
+                # Normalisation acoustique douce SEULEMENT si le volume d'entrée est très faible, sans clipping ni bruit
+                if 50 < self.last_peak < 6000:
+                    gentle_gain = min(1.8, 11000.0 / float(self.last_peak))
+                    clean_audio = np.clip(audio_data.astype(np.float32) * gentle_gain, -32767, 32767).astype(np.int16)
+                    print(f"[AudioRecorder] Normalisation douce : x{gentle_gain:.2f} (Peak {self.last_peak} -> {int(np.max(np.abs(clean_audio)))})")
                 else:
-                    clean_data = audio_data
+                    clean_audio = audio_data
 
-                # Amplification dynamique intelligente / AGC (Normalisation numérique haute fidélité)
-                # Remonte le niveau du signal audio à ~24000 (environ 75% du maximum 32767)
-                peak_clean = int(np.max(np.abs(clean_data))) if len(clean_data) > 0 else 0
-                if peak_clean > 100:
-                    target_peak = 24000.0
-                    gain = min(15.0, target_peak / float(peak_clean))
-                    amplified = np.clip(clean_data.astype(np.float32) * gain, -32767, 32767).astype(np.int16)
-                    print(f"[AudioRecorder] Gain AGC appliqué : x{gain:.1f} (Peak {peak_clean} -> {int(np.max(np.abs(amplified)))})")
-                else:
-                    amplified = clean_data
+                pcm_bytes = clean_audio.tobytes()
+                self.last_pcm_bytes = pcm_bytes
 
-                with wave.open(abs_path, 'wb') as wf:
-                    wf.setnchannels(1)
-                    wf.setsampwidth(2)
-                    wf.setframerate(self.sample_rate)
-                    wf.writeframes(amplified.tobytes())
+                if output_path:
+                    abs_path = os.path.abspath(output_path)
+                    os.makedirs(os.path.dirname(abs_path), exist_ok=True)
+                    # Écriture disque asynchrone pour ne pas retarder le STT
+                    threading.Thread(target=self._save_wav_async, args=(abs_path, pcm_bytes), daemon=True).start()
 
-                dur = len(clean_data) / self.sample_rate
-                print(f"[AudioRecorder] Audio capturé : {abs_path} (RMS={self.last_rms:.1f}, Peak={self.last_peak}, Durée={dur:.2f}s)")
-                return os.path.exists(abs_path) and os.path.getsize(abs_path) > 100
+                dur = len(clean_audio) / self.sample_rate
+                print(f"[AudioRecorder] Audio capturé en mémoire vive : {len(pcm_bytes)} octets (RMS={self.last_rms:.1f}, Peak={self.last_peak}, Durée={dur:.2f}s)")
+                return len(pcm_bytes) > 200
             except Exception as e:
                 print("[AudioRecorder] Erreur WAV WASAPI:", e)
                 return False
@@ -190,6 +193,7 @@ class AudioRecorder:
         # Fallback winmm
         try:
             self.winmm.mciSendStringW(f"stop {self.alias}", None, 0, None)
+            abs_path = os.path.abspath(output_path or "temp_fallback.wav")
             if os.path.exists(abs_path):
                 try:
                     os.remove(abs_path)
@@ -203,6 +207,7 @@ class AudioRecorder:
                 try:
                     with wave.open(abs_path, 'rb') as wf:
                         data = wf.readframes(wf.getnframes())
+                        self.last_pcm_bytes = data
                         samples = np.frombuffer(data, dtype=np.int16)
                         self.last_rms = float(np.sqrt(np.mean(samples.astype(np.float64)**2)))
                         self.last_peak = int(np.max(np.abs(samples)))

@@ -1,0 +1,18 @@
+{
+  "avg_old_total_ms": 296.82,
+  "avg_new_total_ms": 92.31,
+  "diff_ms": 204.51,
+  "speedup": 3.22,
+  "details_old": {
+    "sleep_ms": 280.46,
+    "disk_write_ms": 1.06,
+    "disk_read_ms": 14.57,
+    "payload_ms": 0.39
+  },
+  "details_new": {
+    "sleep_ms": 90.59,
+    "mem_handoff_ms": 1.01,
+    "disk_read_ms": 0.0,
+    "payload_ms": 0.7
+  }
+}

@@ -1,4 +1,5 @@
 import math
+import ctypes
 from PyQt6.QtCore import Qt, QTimer, QRectF, QPointF
 from PyQt6.QtWidgets import QWidget, QApplication
 from PyQt6.QtGui import QPainter, QColor, QPen, QBrush, QFont, QRadialGradient, QPainterPath
@@ -39,7 +40,7 @@ class PointerOverlay(QWidget):
         """Active le pointeur laser à la position (x, y) de l'écran avec étiquette."""
         screen = QApplication.primaryScreen()
         if screen:
-            self.setGeometry(screen.geometry())
+            self.setGeometry(screen.virtualGeometry())
 
         self.target_x = float(x)
         self.target_y = float(y)
@@ -58,6 +59,18 @@ class PointerOverlay(QWidget):
             self.timer.start(16)  # 60 FPS
 
         self.show()
+        
+        # Renforcer le maintien au premier plan absolu (HWND_TOPMOST)
+        HWND_TOPMOST = -1
+        SWP_NOMOVE = 0x0002
+        SWP_NOSIZE = 0x0001
+        SWP_NOACTIVATE = 0x0010
+        SWP_SHOWWINDOW = 0x0040
+        try:
+            ctypes.windll.user32.SetWindowPos(int(self.winId()), HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW)
+        except Exception:
+            pass
+
         self.update()
 
     def _on_tick(self):

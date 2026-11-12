@@ -5,14 +5,33 @@ import os
 log_file_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "antigravity_island.log")
 try:
     log_file = open(log_file_path, "a", encoding="utf-8", buffering=1)
-    sys.stdout = log_file
-    sys.stderr = log_file
+    class FlushWriter:
+        def __init__(self, f): self.f = f
+        def write(self, s):
+            self.f.write(s)
+            self.f.flush()
+        def flush(self): self.f.flush()
+    sys.stdout = FlushWriter(log_file)
+    sys.stderr = FlushWriter(log_file)
 except Exception:
     class NullWriter:
         def write(self, s): pass
         def flush(self): pass
     sys.stdout = NullWriter()
     sys.stderr = NullWriter()
+
+def global_excepthook(exc_type, exc_value, exc_tb):
+    import traceback
+    err_str = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
+    print("[UNCAUGHT EXCEPTION]", err_str)
+    try:
+        crash_log = os.path.join(os.path.dirname(os.path.abspath(__file__)), "crash_dump.log")
+        with open(crash_log, "a", encoding="utf-8") as f:
+            f.write(f"\n=== CRASH CAPTURED ===\n{err_str}\n")
+    except Exception:
+        pass
+
+sys.excepthook = global_excepthook
 
 from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
 from PyQt6.QtGui import QIcon, QPixmap, QPainter, QColor, QBrush

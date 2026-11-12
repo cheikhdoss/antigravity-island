@@ -69,7 +69,13 @@ class Config:
             width=320,
             height=54,
             radius=24,
-            title="Fenêtres réduites"
+            title="Applications ouvertes"
+        ),
+        "control_hub": IslandStateConfig(
+            width=700,
+            height=280,
+            radius=28,
+            title="Hub d'actions & Contrôle"
         )
     }
     

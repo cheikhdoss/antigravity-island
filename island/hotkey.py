@@ -1,4 +1,5 @@
 import os
+import re
 import json
 import time
 import threading
@@ -20,6 +21,7 @@ class PushToTalkEngine:
     """
     Moteur Push-to-Talk matériel ultra-robuste avec combinaison [Windows + Alt].
     - Utilise GetAsyncKeyState du noyau Windows : aucune désynchronisation possible, aucun conflit avec Alt+Tab.
+    - Synchronisation stricte par jeton de séquence (request_seq) pour annuler immédiatement toute requête obsolète.
     - Démarrage instantané et arrêt immédiat.
     - Enregistre le micro, transcrit la voix et génère une réponse instantanée affichée sur l'encoche.
     """
@@ -34,6 +36,7 @@ class PushToTalkEngine:
         self.combo_active = False
         self.press_start_time = 0.0
         self.is_active = False
+        self.request_seq = 0  # Compteur séquentiel d'invalidation de requête
 
     def start(self):
         if self.running:
@@ -72,6 +75,12 @@ class PushToTalkEngine:
                 pass
 
     def _handle_combo_down(self):
+        self.request_seq += 1
+        req_id = self.request_seq
+        print(f"[PushToTalkEngine] Nouvelle requête #{req_id} amorcée.")
+
+        # Interrompre immédiatement la lecture précédente sur l'Island
+        self.window.state_change_requested.emit("stop_reading", {})
         if getattr(self.window, "voice_engine", None):
             self.window.voice_engine.stop()
 
@@ -86,42 +95,55 @@ class PushToTalkEngine:
                 self.recorder.start_recording()
                 self.window.state_change_requested.emit("set_state", {"state": "listening"})
 
-    def _trigger_thinking_and_capture(self):
+    def _trigger_thinking_and_capture(self, req_id: int):
+        if req_id != self.request_seq:
+            return
+        # Mode thinking pur : affiche strictement "Analyse en cours..." sans titre parasite
         self.window.state_change_requested.emit("set_state", {"state": "thinking"})
-        threading.Thread(target=self._process_voice_and_screen, daemon=True).start()
+        threading.Thread(target=self._process_voice_and_screen, args=(req_id,), daemon=True).start()
 
-    def _process_voice_and_screen(self):
+    def _process_voice_and_screen(self, req_id: int):
+        if req_id != self.request_seq:
+            print(f"[PushToTalk] Requête #{req_id} ignorée (remplacée par #{self.request_seq})")
+            return
+
         appdata_dir = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "AntigravityIsland")
         wav_path = os.path.join(appdata_dir, "input_voice.wav")
         query_path = os.path.join(appdata_dir, "last_voice_query.json")
 
-        # 1. Arrêt instantané de l'enregistrement
+        # 1. Arrêt instantané de l'enregistrement (audio en mémoire vive)
         has_audio = self.recorder.stop_recording(wav_path)
+        pcm_bytes = getattr(self.recorder, "last_pcm_bytes", None)
         rms = getattr(self.recorder, "last_rms", 0.0)
         peak = getattr(self.recorder, "last_peak", 0)
 
-        # 2. Transcription ultra-rapide (<0.4s)
+        if req_id != self.request_seq:
+            print(f"[PushToTalk] Requête #{req_id} annulée après enregistrement audio")
+            return
+
+        # 2. Transcription ultra-rapide (<0.2s) directement en mémoire
         transcription = ""
         is_silent = (not has_audio) or (rms < 3.0 and peak < 20)
 
         is_status_msg = False
         if has_audio and not is_silent:
             try:
-                transcription = transcribe_audio(wav_path)
+                audio_input = pcm_bytes if (pcm_bytes and len(pcm_bytes) > 200) else wav_path
+                transcription = transcribe_audio(audio_input)
                 if transcription:
-                    print(f"[PushToTalk] Transcription : '{transcription}'")
-                    # Rétroaction visuelle immédiate : affiche la question entendue sur l'Island
-                    short_q = transcription if len(transcription) <= 36 else (transcription[:33] + "...")
-                    self.window.state_change_requested.emit("set_state", {
-                        "state": "thinking",
-                        "title": f"« {short_q} »"
-                    })
+                    print(f"[PushToTalk] Requête #{req_id} - Transcription : '{transcription}'")
             except Exception as e:
-                print("[PushToTalk] Erreur STT:", e)
+                print(f"[PushToTalk] Erreur STT #{req_id}:", e)
+
+        if req_id != self.request_seq:
+            print(f"[PushToTalk] Requête #{req_id} annulée après transcription")
+            return
 
         # 3. Génération directe de la réponse textuelle (avec streaming en direct)
         accumulated_chunks = []
         def on_stream_chunk(chunk: str):
+            if req_id != self.request_seq:
+                return
             accumulated_chunks.append(chunk)
             streamed = "".join(accumulated_chunks).strip()
             # Nettoyer les astérisques et balises markdown en cours de frappe
@@ -133,11 +155,24 @@ class PushToTalkEngine:
             response_text = "Microphone inaudible. Maintenez Win + Alt et parlez."
             is_status_msg = True
         elif transcription:
-            response_text = generate_response(transcription, on_chunk=on_stream_chunk)
-            is_status_msg = False
+            try:
+                response_text = generate_response(transcription, on_chunk=on_stream_chunk)
+                if not response_text or not response_text.strip():
+                    response_text = "Je n'ai pas pu obtenir de réponse. Réessayez."
+                    is_status_msg = True
+                else:
+                    is_status_msg = False
+            except Exception as e:
+                print(f"[PushToTalk] Exception dans generate_response #{req_id}:", e)
+                response_text = "Une erreur est survenue lors de l'analyse."
+                is_status_msg = True
         else:
             response_text = "Je n'ai pas bien compris. Parlez un peu plus près du micro."
             is_status_msg = True
+
+        if req_id != self.request_seq:
+            print(f"[PushToTalk] Requête #{req_id} annulée avant affichage")
+            return
 
         # 4. Sauvegarde de la requête et de la réponse
         payload = {
@@ -156,16 +191,23 @@ class PushToTalkEngine:
             pass
 
         # 5. Affichage direct et instantané sur le Dynamic Island (sans voix)
-        self.window.state_change_requested.emit("speak", {
-            "text": response_text,
-            "is_status": is_status_msg,
-            "is_answer": not is_status_msg
-        })
+        if req_id == self.request_seq:
+            self.window.state_change_requested.emit("speak", {
+                "text": response_text,
+                "is_status": is_status_msg,
+                "is_answer": not is_status_msg
+            })
 
     def _handle_combo_up(self, duration: float):
+        req_id = self.request_seq
         if self.mode == "hold":
             self.is_active = False
-            self._trigger_thinking_and_capture()
+            # Marge affinée à 90ms (au lieu de 280ms) pour capturer la fin naturelle du mot sans latence
+            def delayed_capture(r_id):
+                time.sleep(0.09)
+                if r_id == self.request_seq:
+                    self._trigger_thinking_and_capture(r_id)
+            threading.Thread(target=delayed_capture, args=(req_id,), daemon=True).start()
         elif self.mode == "toggle":
             if not self.is_active:
                 self.is_active = True
@@ -173,16 +215,19 @@ class PushToTalkEngine:
                 self.window.state_change_requested.emit("set_state", {"state": "listening"})
             else:
                 self.is_active = False
-                self._trigger_thinking_and_capture()
+                self._trigger_thinking_and_capture(req_id)
         else:  # hybrid
             if duration >= 0.15:
-                # Maintien classique Push-to-Talk : déclenchement immédiat dès relâchement
                 self.is_active = False
-                self._trigger_thinking_and_capture()
+                def delayed_capture(r_id):
+                    time.sleep(0.09)
+                    if r_id == self.request_seq:
+                        self._trigger_thinking_and_capture(r_id)
+                threading.Thread(target=delayed_capture, args=(req_id,), daemon=True).start()
             else:
                 # Tap court (<150ms) : bascule mains-libres
                 if not self.is_active:
                     self.is_active = True
                 else:
                     self.is_active = False
-                    self._trigger_thinking_and_capture()
+                    self._trigger_thinking_and_capture(req_id)

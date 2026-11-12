@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  island-rag:
+    image: chromadb/chroma:latest
+    container_name: antigravity-island-rag
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - antigravity_rag_data:/chroma/chroma
+    environment:
+      - IS_PERSISTENT=TRUE
+      - ANONYMIZED_TELEMETRY=FALSE
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/heartbeat"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  antigravity_rag_data:
+    name: antigravity_rag_data

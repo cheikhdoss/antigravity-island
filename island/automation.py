@@ -139,6 +139,18 @@ VK_MAP = {
     "end": 0x23,
     "pageup": 0x21,
     "pagedown": 0x22,
+    "f1": 0x70,
+    "f2": 0x71,
+    "f3": 0x72,
+    "f4": 0x73,
+    "f5": 0x74,
+    "f6": 0x75,
+    "f7": 0x76,
+    "f8": 0x77,
+    "f9": 0x78,
+    "f10": 0x79,
+    "f11": 0x7A,
+    "f12": 0x7B,
 }
 
 def press_key(key_combo: str):

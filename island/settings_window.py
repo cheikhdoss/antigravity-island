@@ -59,6 +59,7 @@ def get_settings_file_path():
 def load_settings():
     default_settings = {
         "accent_color": "#38bdf8",
+        "island_bg_color": "#08080a",
         "style_mode": "island",      # "island" (pilule) ou "iphonex" (encoche iPhone X)
         "position_mode": "notch",   # "notch" (collé au bord) ou "floating"
         "alignment": "center",       # "center", "left", "right"
@@ -69,14 +70,17 @@ def load_settings():
         "voice_enabled": False,      # Texte pur sur le Dynamic Island (sans voix)
         "voice_name": "fr-FR-VivienneMultilingualNeural",
         "voice_rate": "+10%",
-        "llm_backend": "agy",
+        "llm_provider": "agnes",     # "agnes" (Agnes AI 3.0 Flash), "nim" (NVIDIA NIM), "agy" (AGY CLI ACP)
+        "nim_model": "nvidia/nemotron-3.5-bolt-e4b",
+        "vision_provider": "agnes",   # "agnes", "nim_vl", "ocr"
+        "stt_provider": "antigravity", # "antigravity" (DeepMind Connect-RPC), "google", "offline"
         "autostart": is_autostart_enabled(),
         "screen_index": 0,
     }
     settings_path = get_settings_file_path()
     if os.path.exists(settings_path):
         try:
-            with open(settings_path, "r", encoding="utf-8") as f:
+            with open(settings_path, "r", encoding="utf-8-sig") as f:
                 data = json.load(f)
                 if isinstance(data, dict):
                     default_settings.update(data)
@@ -116,7 +120,7 @@ class SettingsWindow(QWidget):
         self.settings = load_settings()
 
         self.setWindowTitle("Antigravity Control Center")
-        self.setFixedSize(520, 730)
+        self.setFixedSize(660, 880)
         self.setStyleSheet("""
             QWidget {
                 background-color: #0b0f19;
@@ -455,6 +459,34 @@ class SettingsWindow(QWidget):
         color_row.addWidget(btn_pick)
         layout_style.addLayout(color_row)
 
+        # Couleur de fond de la Dynamic Island
+        bg_row = QHBoxLayout()
+        bg_row.addWidget(QLabel("Fond de l'Island :"))
+        bg_row.addStretch()
+
+        bg_presets = [
+            ("#08080a", "OLED Noir Pur"),
+            ("#16161e", "Gris Sidéral"),
+            ("#0a1128", "Bleu Minuit"),
+            ("#140924", "Violet Cosmique"),
+            ("#1a090d", "Bordeaux Sombre"),
+            ("#061a14", "Émeraude Sombre")
+        ]
+        for hex_code, name in bg_presets:
+            btn = QPushButton()
+            btn.setFixedSize(24, 24)
+            btn.setProperty("class", "accent-btn")
+            btn.setToolTip(name)
+            btn.setStyleSheet(f"background-color: {hex_code}; border-radius: 12px; border: 1px solid rgba(255,255,255,0.3);")
+            btn.clicked.connect(lambda checked, c=hex_code: self._set_island_bg_color(c))
+            bg_row.addWidget(btn)
+
+        btn_bg_pick = QPushButton("Fond libre...")
+        btn_bg_pick.setProperty("class", "secondary")
+        btn_bg_pick.clicked.connect(self._pick_custom_island_bg_color)
+        bg_row.addWidget(btn_bg_pick)
+        layout_style.addLayout(bg_row)
+
         # Boutons de test d'états
         test_row = QHBoxLayout()
         test_row.setSpacing(4)
@@ -519,6 +551,25 @@ class SettingsWindow(QWidget):
         row_ptt_mode.addWidget(self.combo_ptt)
         layout_ptt.addLayout(row_ptt_mode)
 
+        # Moteur Speech-to-Text (STT)
+        row_stt = QHBoxLayout()
+        row_stt.addWidget(QLabel("Reconnaissance Vocale (STT) :"))
+        row_stt.addStretch()
+        self.combo_stt = QComboBox()
+        self.combo_stt.blockSignals(True)
+        self.combo_stt.addItem("✨ Antigravity DeepMind (Connect-RPC Officiel)", "antigravity")
+        self.combo_stt.addItem("☁️ Google Cloud Speech (Reconnaissance en ligne)", "google")
+        self.combo_stt.addItem("💻 Windows Dictation Local (System.Speech)", "offline")
+
+        cur_stt = self.settings.get("stt_provider", "antigravity")
+        idx_stt = self.combo_stt.findData(cur_stt)
+        if idx_stt >= 0:
+            self.combo_stt.setCurrentIndex(idx_stt)
+        self.combo_stt.blockSignals(False)
+        self.combo_stt.currentIndexChanged.connect(self._on_stt_provider_changed)
+        row_stt.addWidget(self.combo_stt)
+        layout_ptt.addLayout(row_stt)
+
         content_layout.addWidget(card_ptt)
 
         # CARTE 5 : Intelligence Artificielle & Synthèse Vocale
@@ -531,14 +582,64 @@ class SettingsWindow(QWidget):
         lbl_ai.setProperty("class", "section")
         layout_ai.addWidget(lbl_ai)
 
-        # Modèle LLM
+        # Fournisseur LLM (Agnes AI vs NVIDIA NIM vs Antigravity ACP)
         row_llm = QHBoxLayout()
-        row_llm.addWidget(QLabel("Moteur LLM :"))
+        row_llm.addWidget(QLabel("Fournisseur IA (LLM Provider) :"))
         row_llm.addStretch()
-        badge_llm = QLabel(" Antigravity CLI (agy) ")
-        badge_llm.setStyleSheet("background: #0284c7; color: #fff; font-weight: bold; border-radius: 4px; padding: 3px 8px; font-size: 11px;")
-        row_llm.addWidget(badge_llm)
+        self.combo_llm = QComboBox()
+        self.combo_llm.blockSignals(True)
+        self.combo_llm.addItem("✨ Agnes AI 3.0 Flash (~0.8s - Par défaut & Vision)", "agnes")
+        self.combo_llm.addItem("⚡ NVIDIA NIM (5 Modèles Rapides)", "nim")
+        self.combo_llm.addItem("🧠 Antigravity CLI / AGY ACP (Local)", "agy")
+
+        current_p = self.settings.get("llm_provider", "agnes")
+        idx_llm = self.combo_llm.findData(current_p)
+        if idx_llm >= 0:
+            self.combo_llm.setCurrentIndex(idx_llm)
+        self.combo_llm.blockSignals(False)
+        self.combo_llm.currentIndexChanged.connect(self._on_llm_provider_changed)
+        row_llm.addWidget(self.combo_llm)
         layout_ai.addLayout(row_llm)
+
+        # Modèle NVIDIA NIM (5 modèles rapides & intelligents benchmarkés)
+        row_nim_model = QHBoxLayout()
+        row_nim_model.addWidget(QLabel("Modèle NVIDIA NIM :"))
+        row_nim_model.addStretch()
+        self.combo_nim_model = QComboBox()
+        self.combo_nim_model.blockSignals(True)
+        self.combo_nim_model.addItem("⚡ Nemotron 3.5 Bolt (0.35s - Vitesse Éclair)", "nvidia/nemotron-3.5-bolt-e4b")
+        self.combo_nim_model.addItem("⚡ Poolside Laguna XS 2.1 (0.40s - Équilibré)", "poolside/laguna-xs-2.1")
+        self.combo_nim_model.addItem("🧠 Google Gemma 4 31B (1.0s - Haute Précision)", "google/gemma-4-31b-it")
+        self.combo_nim_model.addItem("🧩 Nemotron Nano Omni 30B (1.5s - Raisonnement)", "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning")
+        self.combo_nim_model.addItem("🔬 Nemotron 3.5 Super-VL 120B (2.0s - Multimodal)", "nvidia/nemotron-3.5-super-vl-120b-a12b")
+
+        cur_model = self.settings.get("nim_model", "nvidia/nemotron-3.5-bolt-e4b")
+        idx_m = self.combo_nim_model.findData(cur_model)
+        if idx_m >= 0:
+            self.combo_nim_model.setCurrentIndex(idx_m)
+        self.combo_nim_model.blockSignals(False)
+        self.combo_nim_model.currentIndexChanged.connect(self._on_nim_model_changed)
+        row_nim_model.addWidget(self.combo_nim_model)
+        layout_ai.addLayout(row_nim_model)
+
+        # Modèle Vision & Analyse d'écran
+        row_vision = QHBoxLayout()
+        row_vision.addWidget(QLabel("Vision & Analyse Écran :"))
+        row_vision.addStretch()
+        self.combo_vision = QComboBox()
+        self.combo_vision.blockSignals(True)
+        self.combo_vision.addItem("⚡ Agnes AI 3.0 Flash Vision (~1.0s - Recommandé)", "agnes")
+        self.combo_vision.addItem("🔬 NVIDIA Nemotron Super-VL 120B (~4.9s - NIM Multimodal)", "nim_vl")
+        self.combo_vision.addItem("🔍 WinRT OCR Local (<0.15s - Texte seul)", "ocr")
+
+        cur_vis = self.settings.get("vision_provider", "agnes")
+        idx_vis = self.combo_vision.findData(cur_vis)
+        if idx_vis >= 0:
+            self.combo_vision.setCurrentIndex(idx_vis)
+        self.combo_vision.blockSignals(False)
+        self.combo_vision.currentIndexChanged.connect(self._on_vision_provider_changed)
+        row_vision.addWidget(self.combo_vision)
+        layout_ai.addLayout(row_vision)
 
         # Synthèse vocale activée
         row_voice = QHBoxLayout()
@@ -598,6 +699,17 @@ class SettingsWindow(QWidget):
         btn_test_v.setProperty("class", "secondary")
         btn_test_v.clicked.connect(self._test_voice)
         layout_ai.addWidget(btn_test_v)
+
+        # Mémoire conversationnelle persistante DeepTalk
+        row_deeptalk = QHBoxLayout()
+        row_deeptalk.addWidget(QLabel("Mémoire persistante DeepTalk :"))
+        row_deeptalk.addStretch()
+        self.btn_clear_deeptalk = QPushButton("Effacer la mémoire")
+        self.btn_clear_deeptalk.setProperty("class", "secondary")
+        self.btn_clear_deeptalk.setStyleSheet("color: #ef4444; border-color: #ef4444; padding: 4px 10px; font-weight: bold;")
+        self.btn_clear_deeptalk.clicked.connect(self._on_clear_deeptalk_clicked)
+        row_deeptalk.addWidget(self.btn_clear_deeptalk)
+        layout_ai.addLayout(row_deeptalk)
 
         content_layout.addWidget(card_ai)
 
@@ -723,6 +835,17 @@ class SettingsWindow(QWidget):
         if col.isValid():
             self._set_accent_color(col.name())
 
+    def _set_island_bg_color(self, hex_color: str):
+        self.settings["island_bg_color"] = hex_color
+        save_settings(self.settings)
+        self.settings_changed.emit(self.settings)
+        self._flash_saved()
+
+    def _pick_custom_island_bg_color(self):
+        col = QColorDialog.getColor(QColor(self.settings.get("island_bg_color", "#08080a")), self, "Choisir la couleur de fond de l'Island")
+        if col.isValid():
+            self._set_island_bg_color(col.name())
+
     def _on_ptt_mode_changed(self, idx: int):
         modes = ["hybrid", "hold", "toggle"]
         self.settings["ptt_mode"] = modes[idx] if idx < len(modes) else "hybrid"
@@ -730,8 +853,36 @@ class SettingsWindow(QWidget):
         self.settings_changed.emit(self.settings)
         self._flash_saved()
 
+    def _on_stt_provider_changed(self, idx: int):
+        prov = self.combo_stt.currentData()
+        self.settings["stt_provider"] = prov
+        save_settings(self.settings)
+        self.settings_changed.emit(self.settings)
+        self._flash_saved()
+
     def _on_screen_changed(self, idx: int):
         self.settings["screen_index"] = idx
+        save_settings(self.settings)
+        self.settings_changed.emit(self.settings)
+        self._flash_saved()
+
+    def _on_llm_provider_changed(self, idx: int):
+        p = self.combo_llm.currentData()
+        self.settings["llm_provider"] = p
+        save_settings(self.settings)
+        self.settings_changed.emit(self.settings)
+        self._flash_saved()
+
+    def _on_nim_model_changed(self, idx: int):
+        m = self.combo_nim_model.currentData()
+        self.settings["nim_model"] = m
+        save_settings(self.settings)
+        self.settings_changed.emit(self.settings)
+        self._flash_saved()
+
+    def _on_vision_provider_changed(self, idx: int):
+        v = self.combo_vision.currentData()
+        self.settings["vision_provider"] = v
         save_settings(self.settings)
         self.settings_changed.emit(self.settings)
         self._flash_saved()
@@ -768,6 +919,16 @@ class SettingsWindow(QWidget):
                     "Bonjour ! La synthèse vocale est rapide, naturelle et fluide.",
                     callback_on_finish=lambda: self.island.set_state("idle")
                 )
+
+    def _on_clear_deeptalk_clicked(self):
+        try:
+            from island.deeptalk import DeepTalk
+            DeepTalk.get_instance().clear()
+            self.btn_clear_deeptalk.setText("Mémoire effacée !")
+            from PyQt6.QtCore import QTimer
+            QTimer.singleShot(2000, lambda: self.btn_clear_deeptalk.setText("Effacer la mémoire"))
+        except Exception as e:
+            print("[Settings] Erreur reset DeepTalk :", e)
 
     def _on_autostart_toggled(self, checked: bool):
         set_autostart(checked)

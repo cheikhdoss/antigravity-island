@@ -62,10 +62,16 @@ class IslandWindow(QWidget):
     Collée au plus près du bord supérieur de l'écran Windows, sans bordure et ultra-fluide.
     """
     
+    _instance = None
     state_change_requested = pyqtSignal(str, dict)
+
+    @classmethod
+    def get_instance(cls):
+        return cls._instance
 
     def __init__(self):
         super().__init__()
+        IslandWindow._instance = self
         
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint |
@@ -95,6 +101,7 @@ class IslandWindow(QWidget):
         self.screen_index = 0           # Index de l'écran cible (Multi-Moniteurs)
         self.top_margin = 0
         self.accent_color = Config.COLOR_ACCENT_CYAN
+        self.island_bg_color = "#08080a"
 
         # Contenu dynamique
         self.message_text = "Je suis prêt."
@@ -129,19 +136,35 @@ class IslandWindow(QWidget):
 
         self.setMouseTracking(True)
 
-        # Suivi des fenêtres réduites (Dock Dynamic Island)
+        # Suivi des fenêtres ouvertes et réduites (Dock Dynamic Island)
         self.tracker = MinimizedWindowTracker()
+        self.open_windows = []
         self.minimized_windows = []
         self.hovered_dock_index = -1
+        self.hovered_hub_btn = None
+        self.hovered_hub_app = -1
+        self.hovered_hub_notif = -1
+        self.btn_screenshot_rect = QRectF()
+        self.btn_desktop_rect = QRectF()
+        self.btn_settings_rect = QRectF()
+        self.btn_clear_notifs_rect = QRectF()
+        self.hub_app_rects = []
+        self.hub_notif_rects = []
         self.minimized_timer = QTimer(self)
-        self.minimized_timer.timeout.connect(self._check_minimized_windows)
-        self.minimized_timer.start(400)
+        self.minimized_timer.timeout.connect(self._check_open_windows)
+        self.minimized_timer.start(2000)
 
         # Gestionnaire de notifications & historique carrousel
         self.notif_mgr = NotificationManager(max_items=50)
         self.notif_btn_clear_rect = QRectF()
         self.notif_btn_prev_rect = QRectF()
         self.notif_btn_next_rect = QRectF()
+
+        # Debounce de sortie pour éviter l'oscillation et les crashs de redimensionnement
+        self.leave_debounce_timer = QTimer(self)
+        self.leave_debounce_timer.setSingleShot(True)
+        self.leave_debounce_timer.timeout.connect(self._on_leave_timeout)
+        self._hover_top_count = 0
 
         # Écouteur de notifications Windows Toast (WhatsApp, Discord, etc.)
         self.notif_listener = WindowsNotificationListener(self)
@@ -157,12 +180,19 @@ class IslandWindow(QWidget):
         self.reading_timer.setSingleShot(True)
         self.reading_timer.timeout.connect(lambda: self.current_state == "speaking" and self.set_state("idle"))
 
+        # Watchdog de sécurité pour l'état thinking (timeout 20s max pour ne jamais rester bloqué)
+        self.thinking_watchdog = QTimer(self)
+        self.thinking_watchdog.setSingleShot(True)
+        self.thinking_watchdog.timeout.connect(lambda: self.current_state == "thinking" and self.set_state("idle"))
+
         self.state_change_requested.connect(self.apply_remote_command)
         self._update_geometry()
 
     def apply_settings(self, settings: dict):
         if "accent_color" in settings:
             self.accent_color = QColor(settings["accent_color"])
+        if "island_bg_color" in settings:
+            self.island_bg_color = settings["island_bg_color"]
         if "style_mode" in settings:
             self.style_mode = settings["style_mode"]
         if "position_mode" in settings:
@@ -205,12 +235,22 @@ class IslandWindow(QWidget):
             
         self.current_state = state_name
         
+        if state_name in ["idle", "listening", "thinking"]:
+            self.action_title = ""
+            self.action_detail = ""
+        if state_name in ["listening", "thinking"]:
+            self.reading_timer.stop()
+        if state_name == "thinking":
+            self.thinking_watchdog.start(20000)
+        else:
+            self.thinking_watchdog.stop()
+
         if payload:
             if "text" in payload:
                 self.message_text = payload["text"]
-            if "title" in payload:
+            if "title" in payload and state_name not in ["thinking", "listening", "idle"]:
                 self.action_title = payload["title"]
-            if "detail" in payload:
+            if "detail" in payload and state_name not in ["thinking", "listening", "idle"]:
                 self.action_detail = payload["detail"]
             if "progress" in payload:
                 self.progress_value = float(payload["progress"])
@@ -241,16 +281,17 @@ class IslandWindow(QWidget):
             self.target_h = 76.0
             self.target_r = 26.0
         elif state_name == "minimized_dock":
-            self.target_w = max(280.0, 70.0 + len(self.minimized_windows) * 44.0)
+            wins_count = min(10, len(self.open_windows))
+            self.target_w = max(380.0, 70.0 + wins_count * 44.0 + 190.0)
             self.target_h = 54.0
             self.target_r = 24.0
+        elif state_name == "control_hub":
+            self.target_w = 700.0
+            self.target_h = 280.0
+            self.target_r = 28.0
         elif state_name == "thinking":
             target_cfg = Config.STATES[state_name]
-            title = getattr(self, "action_title", "") or ""
-            if title and title != "Analyse en cours...":
-                self.target_w = max(float(target_cfg.width), min(450.0, 90.0 + len(title) * 8.5))
-            else:
-                self.target_w = float(target_cfg.width)
+            self.target_w = float(target_cfg.width)
             self.target_h = float(target_cfg.height)
             self.target_r = float(target_cfg.radius)
         else:
@@ -259,7 +300,7 @@ class IslandWindow(QWidget):
             self.target_h = float(target_cfg.height)
             self.target_r = float(target_cfg.radius)
         
-        if state_name in ["speaking", "action", "notification", "minimized_dock"]:
+        if state_name in ["speaking", "action", "notification", "minimized_dock", "control_hub"]:
             self.anim.setEasingCurve(QEasingCurve.Type.OutCubic)
             self.anim.setDuration(340)
         else:
@@ -319,6 +360,8 @@ class IslandWindow(QWidget):
         if action == "set_state":
             state = data.get("state", "idle")
             self.set_state(state, data)
+        elif action == "stop_reading":
+            self.reading_timer.stop()
         elif action == "stream_text":
             self.reading_timer.stop()
             self.message_text = data.get("text", "")
@@ -336,23 +379,21 @@ class IslandWindow(QWidget):
                     self.state_change_requested.emit("idle", {})
                 self.voice_engine.speak(self.message_text, callback_on_finish=on_done)
             else:
-                # Règle UX stricte demandée par l'utilisateur :
-                # 1. Affirmation/statut court de l'Island (ex: "Je suis prêt", "Microphone inaudible", "Pas bien compris") -> 2 secondes (2000 ms)
-                # 2. Réponse substantielle à une requête -> Reste affichée plus de 5s pour permettre la lecture (base 7s + 50ms/caractère, max 25s)
+                # Règle UX demandée par l'utilisateur :
+                # 1. Affirmations/statuts courts de l'Island -> 2 secondes (2000 ms)
+                # 2. Réponses explicatives ou réponses aux questions -> NE disparaissent PAS tant que l'utilisateur ne clique pas sur l'orbe ou l'Island !
                 txt_lower = self.message_text.lower().strip()
                 is_status = data.get("is_status", False) or any(kw in txt_lower for kw in [
                     "inaudible", "pas bien compris", "suis prêt", "suis pret", "à votre écoute",
                     "a votre ecoute", "analys", "réessayez", "reessayez", "parlez un peu plus",
-                    "prêt !", "pret !"
+                    "prêt !", "pret !", "saut de ligne", "texte saisi", "verrouillée", "bureau affiché"
                 ]) and not data.get("is_answer", False)
 
-                if is_status or (len(self.message_text) <= 45 and not data.get("is_answer", False)):
-                    reading_ms = 2000  # 2 secondes pile pour les affirmations/statuts du island
+                if is_status:
+                    self.reading_timer.start(2000)
                 else:
-                    # Plus de 5 secondes pour une vraie réponse à une requête
-                    reading_ms = int(max(7000, min(25000, 6500 + len(self.message_text) * 50)))
-
-                self.reading_timer.start(reading_ms)
+                    # Reste ouvert indéfiniment jusqu'au clic utilisateur
+                    self.reading_timer.stop()
         elif action == "audio_power":
             self.audio_power = float(data.get("power", 0.0))
         elif action == "action":
@@ -395,45 +436,91 @@ class IslandWindow(QWidget):
             self.notif_timer.start(7500)  # Réinitialise la durée d'affichage au scroll
             self.update()
 
-    def _check_minimized_windows(self):
+    def _check_open_windows(self):
         try:
-            wins = self.tracker.get_minimized_windows()
-            prev_count = len(self.minimized_windows)
-            self.minimized_windows = wins
-            if len(wins) != prev_count:
+            # Ne pas solliciter EnumWindows trop agressivement en mode idle
+            wins = self.tracker.get_all_open_windows()
+            prev_count = len(self.open_windows)
+            self.open_windows = list(wins)
+            self.minimized_windows = [w for w in self.open_windows if w.get("is_minimized")]
+            if len(self.open_windows) != prev_count:
                 if self.current_state == "minimized_dock":
-                    if len(wins) == 0:
+                    if len(self.open_windows) == 0:
                         self.set_state("idle")
                     else:
-                        new_w = max(280.0, 70.0 + len(wins) * 44.0)
+                        new_w = max(280.0, 70.0 + min(10, len(self.open_windows)) * 44.0)
                         self.target_w = new_w
                         self.anim.stop()
                         self.cur_w = new_w
                         self._update_geometry()
                 self.update()
-        except Exception:
-            pass
+        except Exception as e:
+            print("[_check_open_windows] Error:", e)
+
+    _check_minimized_windows = _check_open_windows
+
+    def take_quick_screenshot(self):
+        """Capture d'écran instantanée, copie dans le presse-papier et affichage dynamique."""
+        try:
+            from island.vision import capture_screen
+            res = capture_screen()
+            file_path = res.get("file_path", "")
+            if file_path:
+                from PyQt6.QtGui import QImage
+                img = QImage(file_path)
+                if not img.isNull():
+                    QApplication.clipboard().setImage(img)
+            self.notif_mgr.add("Capture d'écran", "Capture plein écran", "Image copiée dans le presse-papier", "#22c55e")
+            self.set_state("notification")
+            self.notif_timer.start(3500)
+        except Exception as e:
+            print("[Screenshot] Erreur :", e)
+
+    def _on_leave_timeout(self):
+        from PyQt6.QtGui import QCursor
+        global_pos = QCursor.pos()
+        if not self.geometry().contains(global_pos):
+            if self.current_state in ["minimized_dock", "control_hub"]:
+                self.set_state("idle")
 
     def enterEvent(self, event):
         super().enterEvent(event)
-        if self.current_state == "idle" and len(self.minimized_windows) > 0:
+        self.leave_debounce_timer.stop()
+        self._check_open_windows()
+        if self.current_state == "idle":
             self.set_state("minimized_dock")
 
     def leaveEvent(self, event):
         super().leaveEvent(event)
         self.hovered_dock_index = -1
-        if self.current_state == "minimized_dock":
-            self.set_state("idle")
+        self.hovered_hub_btn = None
+        self.hovered_hub_app = -1
+        self.hovered_hub_notif = -1
+        self._hover_top_count = 0
+        if self.current_state in ["minimized_dock", "control_hub"]:
+            self.leave_debounce_timer.start(350)
 
     def mouseMoveEvent(self, event):
         super().mouseMoveEvent(event)
+        pos = event.position()
+
         if self.current_state == "minimized_dock":
-            pos = event.position()
+            # Expansion dynamique vers le Super Hub si le curseur remonte vers le bord supérieur de l'encoche
+            if pos.y() <= 16.0:
+                self._hover_top_count = getattr(self, "_hover_top_count", 0) + 1
+                if self._hover_top_count >= 2:
+                    self.set_state("control_hub")
+                    self._hover_top_count = 0
+                    return
+            else:
+                self._hover_top_count = 0
+
             pad_x = Config.SHADOW_BLUR + 16.0
             dock_x = pad_x + 18.0
             cy = self.height() / 2.0
             hovered = -1
-            for i in range(len(self.minimized_windows)):
+            display_wins = self.open_windows[:10]
+            for i in range(len(display_wins)):
                 tile_rect = QRectF(dock_x + i * 44.0, cy - 18.0, 36.0, 36.0)
                 if tile_rect.contains(pos):
                     hovered = i
@@ -442,17 +529,94 @@ class IslandWindow(QWidget):
                 self.hovered_dock_index = hovered
                 self.update()
 
+        elif self.current_state == "control_hub":
+            # 1. Détection des boutons d'actions rapides
+            if self.btn_screenshot_rect.contains(pos):
+                self.hovered_hub_btn = "screenshot"
+            elif self.btn_desktop_rect.contains(pos):
+                self.hovered_hub_btn = "desktop"
+            elif self.btn_settings_rect.contains(pos):
+                self.hovered_hub_btn = "settings"
+            elif self.btn_clear_notifs_rect.contains(pos):
+                self.hovered_hub_btn = "clear_notifs"
+            else:
+                self.hovered_hub_btn = None
+
+            # 2. Détection de survol des cartes d'applications
+            hovered_app = -1
+            for i, r in enumerate(self.hub_app_rects):
+                if r.contains(pos):
+                    hovered_app = i
+                    break
+            self.hovered_hub_app = hovered_app
+
+            # 3. Détection de survol des cartes de notifications
+            hovered_notif = -1
+            for i, r in enumerate(self.hub_notif_rects):
+                if r.contains(pos):
+                    hovered_notif = i
+                    break
+            self.hovered_hub_notif = hovered_notif
+
+            self.update()
+
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
+            pos = event.position()
             if self.current_state == "minimized_dock":
-                if 0 <= self.hovered_dock_index < len(self.minimized_windows):
-                    win = self.minimized_windows[self.hovered_dock_index]
-                    self.tracker.restore_window(win["hwnd"])
-                    self._check_minimized_windows()
+                if getattr(self, "dock_hub_btn_rect", QRectF()).contains(pos):
+                    self.set_state("control_hub")
+                    return
+
+                display_wins = self.open_windows[:10]
+                if 0 <= self.hovered_dock_index < len(display_wins):
+                    win = display_wins[self.hovered_dock_index]
+                    self.tracker.activate_window(win["hwnd"])
+                    self._check_open_windows()
                     self.set_state("idle")
                     return
+
+            elif self.current_state == "control_hub":
+                # 1. Clic sur les boutons d'action rapide
+                if self.btn_screenshot_rect.contains(pos):
+                    self.take_quick_screenshot()
+                    return
+                elif self.btn_desktop_rect.contains(pos):
+                    from island.automation import press_key
+                    press_key("win+d")
+                    self.set_state("idle")
+                    return
+                elif self.btn_settings_rect.contains(pos):
+                    if getattr(self, "settings_window", None):
+                        self.settings_window.show()
+                        self.settings_window.raise_()
+                        self.settings_window.activateWindow()
+                    self.set_state("idle")
+                    return
+                elif self.btn_clear_notifs_rect.contains(pos):
+                    self.notif_mgr.clear_all()
+                    self.update()
+                    return
+
+                # 2. Clic sur une carte d'application dans la grille
+                if 0 <= self.hovered_hub_app < len(self.open_windows):
+                    win = self.open_windows[self.hovered_hub_app]
+                    self.tracker.activate_window(win["hwnd"])
+                    self._check_open_windows()
+                    self.set_state("idle")
+                    return
+
+                # 3. Clic sur une notification dans le flux
+                if 0 <= self.hovered_hub_notif < len(self.notif_mgr.items):
+                    self.notif_mgr.current_index = self.hovered_hub_notif
+                    self.set_state("notification")
+                    self.notif_timer.start(5000)
+                    return
+
+                self.set_state("idle")
+                return
+
             elif self.current_state == "notification":
-                pos = event.position()
                 if self.notif_btn_clear_rect.contains(pos):
                     self.notif_mgr.clear_all()
                     self.notif_timer.stop()
@@ -518,76 +682,80 @@ class IslandWindow(QWidget):
 
     def paintEvent(self, event):
         painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        painter.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
+        try:
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            painter.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
 
-        pad_x = Config.SHADOW_BLUR + 16.0
-        pad_top = 0.0 if self.position_mode == "notch" else float(Config.SHADOW_BLUR)
-        
-        pill_rect = QRectF(pad_x, pad_top, self.cur_w, self.cur_h)
-        radius = min(self.cur_r, self.cur_h / 2.0)
+            pad_x = Config.SHADOW_BLUR + 16.0
+            pad_top = 0.0 if self.position_mode == "notch" else float(Config.SHADOW_BLUR)
+            
+            pill_rect = QRectF(pad_x, pad_top, self.cur_w, self.cur_h)
+            radius = min(self.cur_r, self.cur_h / 2.0)
 
-        # 1. Ombre portée douce
-        shadow_path = QPainterPath()
-        if self.style_mode == "iphonex" and self.position_mode == "notch":
-            shadow_path = create_iphone_x_notch_path(
-                pad_x - 1, pad_top, self.cur_w + 2, self.cur_h + 4, r_bottom=radius + 2, r_ear=10.0
-            )
-        elif self.position_mode == "notch":
-            shadow_rect = pill_rect.adjusted(-2, 0, 2, 8)
-            shadow_path.addRoundedRect(shadow_rect, radius, radius)
-        else:
-            shadow_rect = pill_rect.adjusted(-2, 2, 2, 6)
-            shadow_path.addRoundedRect(shadow_rect, radius + 2, radius + 2)
-        
-        shadow_color = QColor(Config.COLOR_SHADOW)
-        painter.fillPath(shadow_path, QBrush(shadow_color))
+            # 1. Ombre portée douce
+            shadow_path = QPainterPath()
+            if self.style_mode == "iphonex" and self.position_mode == "notch":
+                shadow_path = create_iphone_x_notch_path(
+                    pad_x - 1, pad_top, self.cur_w + 2, self.cur_h + 4, r_bottom=radius + 2, r_ear=10.0
+                )
+            elif self.position_mode == "notch":
+                shadow_rect = pill_rect.adjusted(-2, 0, 2, 8)
+                shadow_path.addRoundedRect(shadow_rect, radius, radius)
+            else:
+                shadow_rect = pill_rect.adjusted(-2, 2, 2, 6)
+                shadow_path.addRoundedRect(shadow_rect, radius + 2, radius + 2)
+            
+            shadow_color = QColor(Config.COLOR_SHADOW)
+            painter.fillPath(shadow_path, QBrush(shadow_color))
 
-        # 2. Corps de l'encoche
-        if self.style_mode == "iphonex" and self.position_mode == "notch":
-            main_path = create_iphone_x_notch_path(
-                pad_x, pad_top, self.cur_w, self.cur_h, r_bottom=radius, r_ear=9.0
-            )
-        else:
-            main_path = QPainterPath()
-            main_path.addRoundedRect(pill_rect, radius, radius)
+            # 2. Corps de l'encoche
+            if self.style_mode == "iphonex" and self.position_mode == "notch":
+                main_path = create_iphone_x_notch_path(
+                    pad_x, pad_top, self.cur_w, self.cur_h, r_bottom=radius, r_ear=9.0
+                )
+            else:
+                main_path = QPainterPath()
+                main_path.addRoundedRect(pill_rect, radius, radius)
 
-        bg_grad = QLinearGradient(pill_rect.topLeft(), pill_rect.bottomLeft())
-        bg_grad.setColorAt(0.0, QColor(14, 14, 18, 252))
-        bg_grad.setColorAt(1.0, QColor(6, 6, 8, 255))
-        painter.fillPath(main_path, QBrush(bg_grad))
+            bg_grad = QLinearGradient(pill_rect.topLeft(), pill_rect.bottomLeft())
+            base_col = QColor(getattr(self, "island_bg_color", "#08080a"))
+            r, g, b = base_col.red(), base_col.green(), base_col.blue()
+            bg_grad.setColorAt(0.0, QColor(min(255, r + 6), min(255, g + 6), min(255, b + 8), 252))
+            bg_grad.setColorAt(1.0, QColor(r, g, b, 255))
+            painter.fillPath(main_path, QBrush(bg_grad))
 
-        # 3. Bordure subtile Hairline
-        border_pen = QPen(Config.COLOR_BORDER, 1.0)
-        painter.setPen(border_pen)
-        painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.drawPath(main_path)
-
-        # 4. Détail matériel spécifique iPhone X : Grille haut-parleur
-        if self.style_mode == "iphonex":
-            speaker_w = min(46.0, self.cur_w * 0.35)
-            speaker_h = 3.0
-            speaker_x = pill_rect.center().x() - speaker_w / 2.0
-            speaker_y = pill_rect.top() + 4.0
+            # 3. Finition bordeless pure : Zéro contour gris ou bande grise parasite
             painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(QBrush(QColor(40, 40, 48, 220)))
-            painter.drawRoundedRect(QRectF(speaker_x, speaker_y, speaker_w, speaker_h), 1.5, 1.5)
 
-        # 5. Rendu des contenus selon l'état
-        if self.current_state == "idle":
-            self._draw_idle_content(painter, pill_rect)
-        elif self.current_state == "listening":
-            self._draw_listening_content(painter, pill_rect)
-        elif self.current_state == "thinking":
-            self._draw_thinking_content(painter, pill_rect)
-        elif self.current_state == "speaking":
-            self._draw_speaking_content(painter, pill_rect)
-        elif self.current_state == "action":
-            self._draw_action_content(painter, pill_rect)
-        elif self.current_state == "notification":
-            self._draw_notification_content(painter, pill_rect)
-        elif self.current_state == "minimized_dock":
-            self._draw_minimized_dock_content(painter, pill_rect)
+            # 4. Détail matériel spécifique iPhone X : Grille haut-parleur
+            if self.style_mode == "iphonex":
+                speaker_w = min(46.0, self.cur_w * 0.35)
+                speaker_h = 3.0
+                speaker_x = pill_rect.center().x() - speaker_w / 2.0
+                speaker_y = pill_rect.top() + 4.0
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.setBrush(QBrush(QColor(40, 40, 48, 220)))
+                painter.drawRoundedRect(QRectF(speaker_x, speaker_y, speaker_w, speaker_h), 1.5, 1.5)
+
+            # 5. Rendu des contenus selon l'état
+            if self.current_state == "idle":
+                self._draw_idle_content(painter, pill_rect)
+            elif self.current_state == "listening":
+                self._draw_listening_content(painter, pill_rect)
+            elif self.current_state == "thinking":
+                self._draw_thinking_content(painter, pill_rect)
+            elif self.current_state == "speaking":
+                self._draw_speaking_content(painter, pill_rect)
+            elif self.current_state == "action":
+                self._draw_action_content(painter, pill_rect)
+            elif self.current_state == "notification":
+                self._draw_notification_content(painter, pill_rect)
+            elif self.current_state == "minimized_dock":
+                self._draw_minimized_dock_content(painter, pill_rect)
+            elif self.current_state == "control_hub":
+                self._draw_control_hub_content(painter, pill_rect)
+        finally:
+            painter.end()
 
     def _draw_idle_content(self, painter: QPainter, rect: QRectF):
         """Contenu compact au repos — Point lumineux positionné strictement à GAUCHE."""
@@ -615,14 +783,17 @@ class IslandWindow(QWidget):
         painter.setBrush(QBrush(acc))
         painter.drawEllipse(dot_pos, 3.2, 3.2)
 
-        # Indicateur discret de fenêtres minimisées à droite (si présentes)
-        if len(self.minimized_windows) > 0:
-            count = len(self.minimized_windows)
+        # Indicateur discret d'applications ouvertes à droite
+        if len(self.open_windows) > 0:
+            count = len(self.open_windows)
             badge_x = rect.right() - 28.0
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(QBrush(QColor(255, 255, 255, 25)))
             painter.drawRoundedRect(QRectF(badge_x, cy - 7.0, 18.0, 14.0), 7.0, 7.0)
             painter.setPen(QColor(255, 255, 255, 170))
+            font_cnt = QFont("Segoe UI", 7, QFont.Weight.Bold)
+            painter.setFont(font_cnt)
+            painter.drawText(QRectF(badge_x, cy - 7.0, 18.0, 14.0), Qt.AlignmentFlag.AlignCenter, str(count))
             font_cnt = QFont("Segoe UI", 7, QFont.Weight.Bold)
             painter.setFont(font_cnt)
             painter.drawText(QRectF(badge_x, cy - 7.0, 18.0, 14.0), Qt.AlignmentFlag.AlignCenter, str(count))
@@ -652,8 +823,7 @@ class IslandWindow(QWidget):
         font = QFont("Segoe UI", 9, QFont.Weight.Medium)
         painter.setFont(font)
         text_rect = QRectF(orb_x + 18.0, rect.top(), rect.width() - 50.0, rect.height())
-        label = getattr(self, "action_title", "") or "Analyse en cours..."
-        painter.drawText(text_rect, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, label)
+        painter.drawText(text_rect, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, "Analyse en cours...")
 
     def _draw_speaking_content(self, painter: QPainter, rect: QRectF):
         header_y = rect.top() + 16.0
@@ -677,13 +847,13 @@ class IslandWindow(QWidget):
             wave_cx = rect.right() - 40.0
             self.waveform.draw(painter, wave_cx, header_y, max_height=14.0, color=acc)
         else:
-            painter.setPen(QColor(255, 255, 255, 90))
+            painter.setPen(QColor(255, 255, 255, 120))
             font_sub = QFont("Segoe UI", 8, QFont.Weight.Medium)
             painter.setFont(font_sub)
             painter.drawText(
-                QRectF(rect.right() - 90.0, header_y - 8.0, 70.0, 16.0),
+                QRectF(rect.right() - 110.0, header_y - 8.0, 90.0, 16.0),
                 Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight,
-                "Dynamic Island"
+                "✕ Fermer"
             )
 
         painter.setPen(Config.COLOR_TEXT_PRIMARY)
@@ -851,7 +1021,8 @@ class IslandWindow(QWidget):
         cy = rect.center().y()
 
         hovered_win = None
-        for i, win in enumerate(self.minimized_windows):
+        display_wins = self.open_windows[:10]  # Max 10 dans le dock compact
+        for i, win in enumerate(display_wins):
             tile_x = pad_left + i * 44.0
             tile_rect = QRectF(tile_x, cy - 18.0, 36.0, 36.0)
 
@@ -866,47 +1037,337 @@ class IslandWindow(QWidget):
 
             painter.drawRoundedRect(tile_rect, 9.0, 9.0)
 
-            # Dessin de l'icône de l'application
-            pix = win.get("pixmap")
+            # Dessin de l'icône de l'application via le tracker thread-safe
+            app_name = win.get("app_name", "")
+            pix = self.tracker.get_app_icon(app_name, allow_generate=False)
             if pix and not pix.isNull():
                 painter.drawPixmap(int(tile_rect.left() + 6.0), int(tile_rect.top() + 6.0), 24, 24, pix)
             else:
                 painter.setPen(Config.COLOR_TEXT_PRIMARY)
                 font_let = QFont("Segoe UI", 10, QFont.Weight.Bold)
                 painter.setFont(font_let)
-                let = (win.get("app_name", "A")[:1]).upper()
+                let = (app_name[:1] if app_name else "A").upper()
                 painter.drawText(tile_rect, Qt.AlignmentFlag.AlignCenter, let)
 
-        # Label d'information sur la droite des tuiles
-        label_x = pad_left + len(self.minimized_windows) * 44.0 + 8.0
-        label_w = max(40.0, rect.right() - label_x - 12.0)
+            # Badge de statut (Vert = actif, Orange = minimisé)
+            if win.get("is_active"):
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.setBrush(QBrush(QColor(34, 197, 94)))
+                painter.drawEllipse(QPointF(tile_rect.right() - 4.0, tile_rect.top() + 4.0), 3.0, 3.0)
+            elif win.get("is_minimized"):
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.setBrush(QBrush(QColor(249, 115, 22)))
+                painter.drawEllipse(QPointF(tile_rect.right() - 4.0, tile_rect.bottom() - 4.0), 2.5, 2.5)
+
+        # Bouton d'accès au Hub sur l'extrémité droite
+        hub_w = 64.0
+        hub_rect = QRectF(rect.right() - hub_w - 12.0, cy - 13.0, hub_w, 26.0)
+        self.dock_hub_btn_rect = hub_rect
+        painter.setPen(QPen(QColor(255, 255, 255, 40), 1.0))
+        painter.setBrush(QBrush(QColor(255, 255, 255, 20)))
+        painter.drawRoundedRect(hub_rect, 8.0, 8.0)
+        painter.setPen(QColor(255, 255, 255, 210))
+        font_hub = QFont("Segoe UI", 7, QFont.Weight.Bold)
+        painter.setFont(font_hub)
+        painter.drawText(hub_rect, Qt.AlignmentFlag.AlignCenter, "🎛️ Hub")
+
+        # Label d'information / Aperçu textuel de la fenêtre
+        label_x = pad_left + len(display_wins) * 44.0 + 8.0
+        label_w = max(40.0, hub_rect.left() - label_x - 10.0)
         
         if hovered_win:
+            is_act = hovered_win.get("is_active", False)
+            is_min = hovered_win.get("is_minimized", False)
+            status_str = "ACTIF" if is_act else ("RÉDUIT" if is_min else "OUVERT")
+            status_col = QColor(34, 197, 94) if is_act else (QColor(249, 115, 22) if is_min else QColor(56, 189, 248))
+
+            # Nom application + Badge
             painter.setPen(Config.COLOR_TEXT_PRIMARY)
-            font_t = QFont("Segoe UI", 8, QFont.Weight.Medium)
+            font_t = QFont("Segoe UI", 8, QFont.Weight.Bold)
             painter.setFont(font_t)
-            title = hovered_win.get("title", "")
-            if len(title) > 22:
-                title = title[:19] + "..."
             painter.drawText(
-                QRectF(label_x, cy - 14.0, label_w, 14.0),
+                QRectF(label_x, cy - 15.0, max(20.0, label_w - 60.0), 14.0),
                 Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
                 hovered_win.get("app_name", "")
             )
-            painter.setPen(Config.COLOR_TEXT_SECONDARY)
+            # Badge statut compact
+            badge_r = QRectF(label_x + label_w - 56.0, cy - 14.0, 52.0, 13.0)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QBrush(QColor(status_col.red(), status_col.green(), status_col.blue(), 40)))
+            painter.drawRoundedRect(badge_r, 6.0, 6.0)
+            painter.setPen(status_col)
+            painter.setFont(QFont("Segoe UI", 6, QFont.Weight.Bold))
+            painter.drawText(badge_r, Qt.AlignmentFlag.AlignCenter, status_str)
+
+            # Titre complet de la fenêtre
+            painter.setPen(QColor(255, 255, 255, 210))
             font_sub = QFont("Segoe UI", 7, QFont.Weight.Normal)
             painter.setFont(font_sub)
+            title = hovered_win.get("title", "")
+            if len(title) > 35:
+                title = title[:32] + "..."
             painter.drawText(
-                QRectF(label_x, cy, label_w, 14.0),
+                QRectF(label_x, cy + 1.0, label_w, 14.0),
                 Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
                 title
             )
         else:
-            painter.setPen(QColor(255, 255, 255, 100))
+            painter.setPen(QColor(255, 255, 255, 110))
             font_hint = QFont("Segoe UI", 8, QFont.Weight.Normal)
             painter.setFont(font_hint)
+            nb = len(self.open_windows)
+            status_txt = f"{nb} fenêtre{'s' if nb > 1 else ''} • Clic pour basculer" if nb > 0 else "Aucune fenêtre détectée"
             painter.drawText(
                 QRectF(label_x, cy - 9.0, label_w, 18.0),
                 Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
-                f"{len(self.minimized_windows)} réduite{'s' if len(self.minimized_windows) > 1 else ''}"
+                status_txt
             )
+
+    def _draw_control_hub_content(self, painter: QPainter, rect: QRectF):
+        """
+        Rendu du Super Hub de Contrôle (Hover vers le haut / plein écran de l'Island) :
+        - En-tête avec Actions Rapides (Screenshot, Bureau, Réglages, Vider notifs).
+        - Colonne gauche : Applications ouvertes avec disposition en grille de cartes élégantes (icône, statut, titre).
+        - Colonne droite : Historique complet des notifications avec logos et possibilité d'effacer.
+        """
+        acc = getattr(self, "accent_color", Config.COLOR_ACCENT_CYAN)
+
+        # 1. En-tête & Titre
+        dot_pos = QPointF(rect.left() + 22.0, rect.top() + 23.0)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QBrush(acc))
+        painter.drawEllipse(dot_pos, 4.0, 4.0)
+
+        font_head = QFont("Segoe UI", 8, QFont.Weight.Bold)
+        painter.setFont(font_head)
+        painter.setPen(Config.COLOR_TEXT_PRIMARY)
+        painter.drawText(
+            QRectF(rect.left() + 32.0, rect.top() + 11.0, 150.0, 24.0),
+            Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
+            "TABLEAU DE BORD"
+        )
+
+        # 2. Boutons d'actions rapides (Alignés à droite)
+        btn_y = rect.top() + 11.0
+        btn_h = 24.0
+
+        # 2.1 Bouton Vider notifs
+        self.btn_clear_notifs_rect = QRectF(rect.right() - 104.0, btn_y, 92.0, btn_h)
+        is_h_clear = (self.hovered_hub_btn == "clear_notifs")
+        painter.setPen(QPen(QColor(255, 255, 255, 60 if is_h_clear else 25), 1.0))
+        painter.setBrush(QBrush(QColor(255, 255, 255, 30 if is_h_clear else 14)))
+        painter.drawRoundedRect(self.btn_clear_notifs_rect, 12.0, 12.0)
+        painter.setPen(QColor(255, 255, 255, 220 if is_h_clear else 170))
+        font_btn = QFont("Segoe UI", 7, QFont.Weight.Medium)
+        painter.setFont(font_btn)
+        painter.drawText(self.btn_clear_notifs_rect, Qt.AlignmentFlag.AlignCenter, "🗑️ Vider notifs")
+
+        # 2.2 Bouton Réglages
+        self.btn_settings_rect = QRectF(self.btn_clear_notifs_rect.left() - 86.0, btn_y, 80.0, btn_h)
+        is_h_set = (self.hovered_hub_btn == "settings")
+        painter.setPen(QPen(QColor(255, 255, 255, 60 if is_h_set else 25), 1.0))
+        painter.setBrush(QBrush(QColor(255, 255, 255, 30 if is_h_set else 14)))
+        painter.drawRoundedRect(self.btn_settings_rect, 12.0, 12.0)
+        painter.setPen(QColor(255, 255, 255, 220 if is_h_set else 170))
+        painter.drawText(self.btn_settings_rect, Qt.AlignmentFlag.AlignCenter, "⚙️ Réglages")
+
+        # 2.3 Bouton Afficher Bureau
+        self.btn_desktop_rect = QRectF(self.btn_settings_rect.left() - 82.0, btn_y, 76.0, btn_h)
+        is_h_desk = (self.hovered_hub_btn == "desktop")
+        painter.setPen(QPen(QColor(255, 255, 255, 60 if is_h_desk else 25), 1.0))
+        painter.setBrush(QBrush(QColor(255, 255, 255, 30 if is_h_desk else 14)))
+        painter.drawRoundedRect(self.btn_desktop_rect, 12.0, 12.0)
+        painter.setPen(QColor(255, 255, 255, 220 if is_h_desk else 170))
+        painter.drawText(self.btn_desktop_rect, Qt.AlignmentFlag.AlignCenter, "🖥️ Bureau")
+
+        # 2.4 Bouton Screenshot
+        self.btn_screenshot_rect = QRectF(self.btn_desktop_rect.left() - 132.0, btn_y, 126.0, btn_h)
+        is_h_shot = (self.hovered_hub_btn == "screenshot")
+        painter.setPen(QPen(QColor(acc.red(), acc.green(), acc.blue(), 180 if is_h_shot else 90), 1.0))
+        painter.setBrush(QBrush(QColor(acc.red(), acc.green(), acc.blue(), 45 if is_h_shot else 20)))
+        painter.drawRoundedRect(self.btn_screenshot_rect, 12.0, 12.0)
+        painter.setPen(QColor(acc if is_h_shot else QColor(255, 255, 255, 220)))
+        painter.setFont(QFont("Segoe UI", 7, QFont.Weight.Bold))
+        painter.drawText(self.btn_screenshot_rect, Qt.AlignmentFlag.AlignCenter, "📸 Capture d'écran")
+
+        # Ligne séparatrice
+        painter.setPen(QPen(QColor(255, 255, 255, 20), 1.0))
+        painter.drawLine(QPointF(rect.left() + 18.0, rect.top() + 42.0), QPointF(rect.right() - 18.0, rect.top() + 42.0))
+
+        # 3. Corps principal : Deux Colonnes
+        content_top = rect.top() + 48.0
+        col1_w = 415.0
+        col2_x = rect.left() + col1_w + 14.0
+        col2_w = rect.right() - col2_x - 16.0
+
+        # Séparateur vertical entre colonnes
+        painter.setPen(QPen(QColor(255, 255, 255, 18), 1.0))
+        painter.drawLine(QPointF(col2_x - 7.0, content_top + 4.0), QPointF(col2_x - 7.0, rect.bottom() - 14.0))
+
+        # --- COLONNE 1 : APPLICATIONS OUVERTES ---
+        painter.setPen(QColor(255, 255, 255, 150))
+        font_sec = QFont("Segoe UI", 7, QFont.Weight.Bold)
+        painter.setFont(font_sec)
+        painter.drawText(
+            QRectF(rect.left() + 18.0, content_top, col1_w, 16.0),
+            Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
+            f"APPLICATIONS OUVERTES ({len(self.open_windows)})"
+        )
+
+        grid_top = content_top + 20.0
+        card_w = (col1_w - 10.0) / 2.0  # ~202px
+        card_h = 56.0
+        self.hub_app_rects = []
+        display_apps = self.open_windows[:6]  # 6 cartes en grille (2 cols x 3 lignes)
+
+        for i, win in enumerate(display_apps):
+            row = i // 2
+            col = i % 2
+            cx = rect.left() + 18.0 + col * (card_w + 8.0)
+            cy = grid_top + row * (card_h + 8.0)
+            card_rect = QRectF(cx, cy, card_w, card_h)
+            self.hub_app_rects.append(card_rect)
+
+            is_app_hovered = (i == self.hovered_hub_app)
+            if is_app_hovered:
+                painter.setPen(QPen(QColor(acc.red(), acc.green(), acc.blue(), 180), 1.2))
+                painter.setBrush(QBrush(QColor(255, 255, 255, 32)))
+            else:
+                painter.setPen(QPen(QColor(255, 255, 255, 22), 1.0))
+                painter.setBrush(QBrush(QColor(255, 255, 255, 12)))
+            painter.drawRoundedRect(card_rect, 10.0, 10.0)
+
+            # Icône de l'application
+            pix = self.tracker.get_app_icon(win.get("app_name", ""), allow_generate=False)
+            if pix and not pix.isNull():
+                painter.drawPixmap(int(cx + 8.0), int(cy + 14.0), 28, 28, pix)
+            else:
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.setBrush(QBrush(QColor(255, 255, 255, 25)))
+                painter.drawRoundedRect(QRectF(cx + 8.0, cy + 14.0, 28.0, 28.0), 6.0, 6.0)
+                painter.setPen(Config.COLOR_TEXT_PRIMARY)
+                painter.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
+                let = (win.get("app_name", "A")[:1]).upper()
+                painter.drawText(QRectF(cx + 8.0, cy + 14.0, 28.0, 28.0), Qt.AlignmentFlag.AlignCenter, let)
+
+            # Titre & App Name
+            text_x = cx + 42.0
+            text_w = card_w - 48.0 - 44.0  # réserve espace pour badge
+
+            painter.setPen(Config.COLOR_TEXT_PRIMARY)
+            painter.setFont(QFont("Segoe UI", 8, QFont.Weight.Bold))
+            painter.drawText(
+                QRectF(text_x, cy + 10.0, text_w, 16.0),
+                Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
+                win.get("app_name", "")
+            )
+
+            painter.setPen(Config.COLOR_TEXT_SECONDARY)
+            painter.setFont(QFont("Segoe UI", 7, QFont.Weight.Normal))
+            raw_title = win.get("title", "")
+            if len(raw_title) > 20:
+                raw_title = raw_title[:18] + "..."
+            painter.drawText(
+                QRectF(text_x, cy + 28.0, text_w + 40.0, 16.0),
+                Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
+                raw_title
+            )
+
+            # Badge de statut (Actif / Réduit / Ouvert)
+            badge_w = 38.0
+            badge_h = 14.0
+            badge_rect = QRectF(card_rect.right() - badge_w - 6.0, cy + 8.0, badge_w, badge_h)
+            painter.setPen(Qt.PenStyle.NoPen)
+            if win.get("is_active"):
+                painter.setBrush(QBrush(QColor(34, 197, 94, 45)))
+                painter.drawRoundedRect(badge_rect, 7.0, 7.0)
+                painter.setPen(QColor(34, 197, 94))
+                painter.setFont(QFont("Segoe UI", 6, QFont.Weight.Bold))
+                painter.drawText(badge_rect, Qt.AlignmentFlag.AlignCenter, "ACTIF")
+            elif win.get("is_minimized"):
+                painter.setBrush(QBrush(QColor(249, 115, 22, 45)))
+                painter.drawRoundedRect(badge_rect, 7.0, 7.0)
+                painter.setPen(QColor(249, 115, 22))
+                painter.setFont(QFont("Segoe UI", 6, QFont.Weight.Bold))
+                painter.drawText(badge_rect, Qt.AlignmentFlag.AlignCenter, "RÉDUIT")
+            else:
+                painter.setBrush(QBrush(QColor(255, 255, 255, 18)))
+                painter.drawRoundedRect(badge_rect, 7.0, 7.0)
+                painter.setPen(QColor(255, 255, 255, 140))
+                painter.setFont(QFont("Segoe UI", 6, QFont.Weight.Normal))
+                painter.drawText(badge_rect, Qt.AlignmentFlag.AlignCenter, "OUVERT")
+
+        # --- COLONNE 2 : TOUTES LES NOTIFICATIONS ---
+        painter.setPen(QColor(255, 255, 255, 150))
+        painter.setFont(font_sec)
+        painter.drawText(
+            QRectF(col2_x, content_top, col2_w, 16.0),
+            Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
+            f"NOTIFICATIONS ({len(self.notif_mgr.items)})"
+        )
+
+        self.hub_notif_rects = []
+        if len(self.notif_mgr.items) == 0:
+            painter.setPen(QColor(255, 255, 255, 80))
+            painter.setFont(QFont("Segoe UI", 8, QFont.Weight.Normal))
+            painter.drawText(
+                QRectF(col2_x, content_top + 50.0, col2_w, 40.0),
+                Qt.AlignmentFlag.AlignCenter,
+                "Aucune notification récente\nVotre flux est à jour."
+            )
+        else:
+            notif_card_h = 56.0
+            display_notifs = self.notif_mgr.items[:3]  # Jusqu'à 3 cartes de notifications
+            for j, item in enumerate(display_notifs):
+                ny = grid_top + j * (notif_card_h + 8.0)
+                n_rect = QRectF(col2_x, ny, col2_w, notif_card_h)
+                self.hub_notif_rects.append(n_rect)
+
+                is_n_h = (j == self.hovered_hub_notif)
+                painter.setPen(QPen(QColor(255, 255, 255, 45 if is_n_h else 20), 1.0))
+                painter.setBrush(QBrush(QColor(255, 255, 255, 24 if is_n_h else 12)))
+                painter.drawRoundedRect(n_rect, 10.0, 10.0)
+
+                # Logo / Icône de l'application notificatrice
+                if item.logo and not item.logo.isNull():
+                    painter.drawPixmap(int(col2_x + 8.0), int(ny + 14.0), 24, 24, item.logo)
+                else:
+                    painter.setPen(Qt.PenStyle.NoPen)
+                    painter.setBrush(QBrush(QColor(item.color_hex)))
+                    painter.drawRoundedRect(QRectF(col2_x + 8.0, ny + 14.0, 24.0, 24.0), 6.0, 6.0)
+                    painter.setPen(QColor(255, 255, 255))
+                    painter.setFont(QFont("Segoe UI", 8, QFont.Weight.Bold))
+                    painter.drawText(QRectF(col2_x + 8.0, ny + 14.0, 24.0, 24.0), Qt.AlignmentFlag.AlignCenter, item.app_name[:1].upper())
+
+                # Textes de la notification
+                nt_x = col2_x + 38.0
+                nt_w = col2_w - 44.0
+                painter.setPen(QColor(item.color_hex))
+                painter.setFont(QFont("Segoe UI", 7, QFont.Weight.Bold))
+                painter.drawText(
+                    QRectF(nt_x, ny + 8.0, nt_w, 14.0),
+                    Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
+                    f"{item.app_name.upper()}  •  {item.time_str}"
+                )
+
+                painter.setPen(Config.COLOR_TEXT_PRIMARY)
+                painter.setFont(QFont("Segoe UI", 7.5, QFont.Weight.Bold))
+                title_s = item.title if item.title else item.app_name
+                if len(title_s) > 24:
+                    title_s = title_s[:22] + "..."
+                painter.drawText(
+                    QRectF(nt_x, ny + 22.0, nt_w, 14.0),
+                    Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
+                    title_s
+                )
+
+                painter.setPen(Config.COLOR_TEXT_SECONDARY)
+                painter.setFont(QFont("Segoe UI", 7, QFont.Weight.Normal))
+                msg_s = item.message
+                if len(msg_s) > 30:
+                    msg_s = msg_s[:28] + "..."
+                painter.drawText(
+                    QRectF(nt_x, ny + 36.0, nt_w, 14.0),
+                    Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
+                    msg_s
+                )
