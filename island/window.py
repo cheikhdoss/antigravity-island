@@ -293,6 +293,8 @@ class IslandWindow(QWidget):
         self.btn_prompt_cancel_rect = QRectF()
         self.hovered_action_btn = None
         self.ptt_engine = None
+        self.hide_on_screen_share = True
+        self.stealth_active = False
 
         # Champ de saisie prompt clavier (Obsidian Glass)
         self.prompt_input = PromptLineEdit(self, on_escape=self._on_prompt_escape)
@@ -450,6 +452,9 @@ class IslandWindow(QWidget):
                 self.show()
             else:
                 self.hide()
+        if "hide_on_screen_share" in settings:
+            self.hide_on_screen_share = bool(settings["hide_on_screen_share"])
+            self.apply_stealth_mode(self.hide_on_screen_share)
 
         if self.current_state == "idle":
             self.cur_w = self.custom_idle_w
@@ -461,6 +466,45 @@ class IslandWindow(QWidget):
 
         self._update_geometry()
         self.update()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if getattr(self, "hide_on_screen_share", True):
+            self.apply_stealth_mode(True)
+
+    def apply_stealth_mode(self, enabled: bool) -> bool:
+        """
+        Active ou désactive l'exclusion de capture d'écran Windows (WDA_EXCLUDEFROMCAPTURE).
+        Rend la fenêtre complètement invisible lors des partages d'écran (Google Meet, Zoom, Teams, OBS)
+        tout en restant parfaitement visible et interactive pour l'utilisateur sur son écran physique.
+        """
+        try:
+            import ctypes
+            hwnd = int(self.winId())
+            user32 = ctypes.windll.user32
+            GWL_EXSTYLE = -20
+            WS_EX_LAYERED = 0x00080000
+            affinity = 0x00000011 if enabled else 0x00000000
+
+            # Windows DWM requiert que WS_EX_LAYERED soit temporairement relâché lors de l'application de l'affinité
+            ex = user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+            is_layered = bool(ex & WS_EX_LAYERED)
+            if is_layered:
+                user32.SetWindowLongW(hwnd, GWL_EXSTYLE, ex & ~WS_EX_LAYERED)
+
+            res = user32.SetWindowDisplayAffinity(ctypes.c_void_p(hwnd), ctypes.c_uint32(affinity))
+
+            if is_layered:
+                user32.SetWindowLongW(hwnd, GWL_EXSTYLE, ex)
+
+            self.stealth_active = enabled if res else False
+            if hasattr(self, "pointer") and self.pointer:
+                self.pointer.apply_stealth_mode(enabled)
+            print(f"[Stealth] Mode présentation furtif (WDA) {'ACTIVÉ' if self.stealth_active else 'DÉSACTIVÉ'} (HWND={hwnd}, res={res})")
+            return bool(res)
+        except Exception as e:
+            print("[Stealth] Erreur SetWindowDisplayAffinity:", e)
+            return False
 
     def set_state(self, state_name: str, payload: dict = None):
         if state_name not in Config.STATES:

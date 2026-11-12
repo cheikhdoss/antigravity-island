@@ -76,6 +76,7 @@ def load_settings():
         "stt_provider": "antigravity", # "antigravity" (DeepMind Connect-RPC), "google", "offline"
         "autostart": is_autostart_enabled(),
         "screen_index": 0,
+        "hide_on_screen_share": True,  # Mode furtif WDA pour visioconférences (Google Meet, Zoom, Teams)
     }
     settings_path = get_settings_file_path()
     if os.path.exists(settings_path):
@@ -713,7 +714,48 @@ class SettingsWindow(QWidget):
 
         content_layout.addWidget(card_ai)
 
-        # CARTE 6 : Système & Démarrage Automatique
+        # CARTE 6 : Confidentialité & Présentations en Ligne (Google Meet / Teams / Zoom)
+        card_privacy = QFrame()
+        card_privacy.setProperty("class", "card")
+        layout_privacy = QVBoxLayout(card_privacy)
+        layout_privacy.setSpacing(10)
+
+        lbl_privacy = QLabel("Confidentialité & Présentations en Ligne")
+        lbl_privacy.setProperty("class", "section")
+        layout_privacy.addWidget(lbl_privacy)
+
+        desc_privacy = QLabel("Protège vos réunions en ligne : l'Island reste visible pour vous sur votre écran, mais devient 100% invisible pour vos interlocuteurs lors d'un partage d'écran (Google Meet, Microsoft Teams, Zoom, OBS).")
+        desc_privacy.setWordWrap(True)
+        desc_privacy.setStyleSheet("font-size: 11px; color: #94a3b8; line-height: 1.4;")
+        layout_privacy.addWidget(desc_privacy)
+
+        row_stealth = QHBoxLayout()
+        row_stealth.addWidget(QLabel("Mode Furtif (Invisible en visioconférence / Meet) :"))
+        row_stealth.addStretch()
+        self.check_stealth = QCheckBox()
+        self.check_stealth.blockSignals(True)
+        self.check_stealth.setChecked(bool(self.settings.get("hide_on_screen_share", True)))
+        self.check_stealth.blockSignals(False)
+        self.check_stealth.setStyleSheet("""
+            QCheckBox::indicator {
+                width: 18px;
+                height: 18px;
+                border-radius: 4px;
+                border: 1px solid #475569;
+                background-color: #1e293b;
+            }
+            QCheckBox::indicator:checked {
+                background-color: #0284c7;
+                border-color: #38bdf8;
+            }
+        """)
+        self.check_stealth.toggled.connect(self._on_stealth_toggled)
+        row_stealth.addWidget(self.check_stealth)
+        layout_privacy.addLayout(row_stealth)
+
+        content_layout.addWidget(card_privacy)
+
+        # CARTE 7 : Système & Démarrage Automatique
         card_sys = QFrame()
         card_sys.setProperty("class", "card")
         layout_sys = QVBoxLayout(card_sys)
@@ -770,6 +812,17 @@ class SettingsWindow(QWidget):
         quit_btn.clicked.connect(lambda: QApplication.quit())
         footer_layout.addWidget(quit_btn)
         main_layout.addLayout(footer_layout)
+
+    def showEvent(self, event):
+        """Applique l'invisibilité en capture d'écran si activée."""
+        super().showEvent(event)
+        try:
+            import ctypes
+            hwnd = int(self.winId())
+            affinity = 0x00000011 if self.settings.get("hide_on_screen_share", True) else 0x00000000
+            ctypes.windll.user32.SetWindowDisplayAffinity(ctypes.c_void_p(hwnd), ctypes.c_uint32(affinity))
+        except Exception:
+            pass
 
     def closeEvent(self, event):
         """Assure la sauvegarde automatique persistante lors de la fermeture de la fenêtre."""
@@ -929,6 +982,19 @@ class SettingsWindow(QWidget):
             QTimer.singleShot(2000, lambda: self.btn_clear_deeptalk.setText("Effacer la mémoire"))
         except Exception as e:
             print("[Settings] Erreur reset DeepTalk :", e)
+
+    def _on_stealth_toggled(self, checked: bool):
+        self.settings["hide_on_screen_share"] = bool(checked)
+        save_settings(self.settings)
+        self.settings_changed.emit(self.settings)
+        try:
+            import ctypes
+            hwnd = int(self.winId())
+            affinity = 0x00000011 if checked else 0x00000000
+            ctypes.windll.user32.SetWindowDisplayAffinity(ctypes.c_void_p(hwnd), ctypes.c_uint32(affinity))
+        except Exception:
+            pass
+        self._flash_saved()
 
     def _on_autostart_toggled(self, checked: bool):
         set_autostart(checked)

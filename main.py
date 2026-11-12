@@ -157,6 +157,22 @@ def main():
 
     tray_menu.addSeparator()
 
+    action_stealth = tray_menu.addAction("Mode Furtif (Invisible en Meet / Présentation)")
+    action_stealth.setCheckable(True)
+    action_stealth.setChecked(bool(user_settings.get("hide_on_screen_share", True)))
+
+    def toggle_stealth_from_tray(checked):
+        control_center.settings["hide_on_screen_share"] = checked
+        save_settings(control_center.settings)
+        control_center.settings_changed.emit(control_center.settings)
+        if hasattr(control_center, "check_stealth"):
+            control_center.check_stealth.blockSignals(True)
+            control_center.check_stealth.setChecked(checked)
+            control_center.check_stealth.blockSignals(False)
+
+    action_stealth.triggered.connect(toggle_stealth_from_tray)
+    control_center.settings_changed.connect(lambda s: action_stealth.setChecked(bool(s.get("hide_on_screen_share", True))))
+
     action_toggle = tray_menu.addAction("Basculer l'encoche")
     action_toggle.triggered.connect(lambda: island.hide() if island.isVisible() else island.show())
 

@@ -35,6 +35,27 @@ class PointerOverlay(QWidget):
 
         self.timer = QTimer(self)
         self.timer.timeout.connect(self._on_tick)
+        self.stealth_active = False
+
+    def apply_stealth_mode(self, enabled: bool) -> bool:
+        """Active ou désactive l'exclusion de capture d'écran Windows (WDA_EXCLUDEFROMCAPTURE)."""
+        try:
+            hwnd = int(self.winId())
+            user32 = ctypes.windll.user32
+            GWL_EXSTYLE = -20
+            WS_EX_LAYERED = 0x00080000
+            affinity = 0x00000011 if enabled else 0x00000000
+            ex = user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+            is_layered = bool(ex & WS_EX_LAYERED)
+            if is_layered:
+                user32.SetWindowLongW(hwnd, GWL_EXSTYLE, ex & ~WS_EX_LAYERED)
+            res = user32.SetWindowDisplayAffinity(ctypes.c_void_p(hwnd), ctypes.c_uint32(affinity))
+            if is_layered:
+                user32.SetWindowLongW(hwnd, GWL_EXSTYLE, ex)
+            self.stealth_active = enabled if res else False
+            return bool(res)
+        except Exception:
+            return False
 
     def point_at(self, x: float, y: float, label: str = "", duration: float = 3.5, color: str = None):
         """Active le pointeur laser à la position (x, y) de l'écran avec étiquette."""
