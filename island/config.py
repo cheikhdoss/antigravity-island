@@ -53,6 +53,12 @@ class Config:
             radius=28,
             title="Réponse"
         ),
+        "prompt_input": IslandStateConfig(
+            width=480,
+            height=52,
+            radius=26,
+            title="Saisie clavier"
+        ),
         "action": IslandStateConfig(
             width=500,
             height=124,

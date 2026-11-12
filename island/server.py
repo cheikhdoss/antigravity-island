@@ -145,6 +145,10 @@ class IslandWebSocketServer:
                             self.window.state_change_requested.emit("set_state", {"state": "control_hub"})
                             await websocket.send(json.dumps({"status": "success", "action": "control_hub"}))
                             continue
+                        elif action in ["trigger_keyboard_ask", "prompt_input", "ask_keyboard"]:
+                            self.window.state_change_requested.emit("trigger_keyboard_ask", {})
+                            await websocket.send(json.dumps({"status": "success", "action": "trigger_keyboard_ask"}))
+                            continue
 
                         # Transmission thread-safe à l'interface PyQt6
                         self.window.state_change_requested.emit(action, data)

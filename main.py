@@ -1,8 +1,19 @@
 import sys
 import os
 
-# Redirection sécurisée des flux standards pour PyInstaller --windowed
-log_file_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "antigravity_island.log")
+# Redirection sécurisée des flux standards vers %APPDATA%\AntigravityIsland pour PyInstaller --windowed
+appdata_dir = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "AntigravityIsland")
+os.makedirs(appdata_dir, exist_ok=True)
+log_file_path = os.path.join(appdata_dir, "antigravity_island.log")
+trace_log_path = os.path.join(appdata_dir, "startup_trace.log")
+
+def trace(msg):
+    try:
+        with open(trace_log_path, "a", encoding="utf-8") as f:
+            f.write(f"[{time.strftime('%H:%M:%S')}] {msg}\n")
+    except Exception:
+        pass
+
 try:
     log_file = open(log_file_path, "a", encoding="utf-8", buffering=1)
     class FlushWriter:
@@ -25,7 +36,7 @@ def global_excepthook(exc_type, exc_value, exc_tb):
     err_str = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
     print("[UNCAUGHT EXCEPTION]", err_str)
     try:
-        crash_log = os.path.join(os.path.dirname(os.path.abspath(__file__)), "crash_dump.log")
+        crash_log = os.path.join(appdata_dir, "crash_dump.log")
         with open(crash_log, "a", encoding="utf-8") as f:
             f.write(f"\n=== CRASH CAPTURED ===\n{err_str}\n")
     except Exception:
@@ -81,25 +92,31 @@ def kill_other_instances():
         pass
 
 def main():
+    trace("Step: main starting")
     kill_other_instances()
+    trace("Step: kill_other_instances done")
 
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
     app.setApplicationName("Antigravity Island")
     app.setQuitOnLastWindowClosed(False)
+    trace("Step: QApplication created")
 
     # 1. Charger les réglages
     user_settings = load_settings()
+    trace("Step: load_settings done")
 
     # 2. Fenêtre de l'encoche (Overlay Dynamic Island)
     island = IslandWindow()
     island.apply_settings(user_settings)
     if user_settings.get("island_visible", True):
         island.show()
+    trace("Step: IslandWindow created and shown")
 
     # 3. Fenêtre de contrôle & Réglages (Centre de contrôle accessible via clic droit ou System Tray)
     control_center = SettingsWindow(island_window=island)
     island.settings_window = control_center
+    trace("Step: SettingsWindow created")
 
     # Sauvegarde garantie en cas d'arrêt de l'application
     app.aboutToQuit.connect(lambda: save_settings(control_center.settings))
@@ -108,6 +125,7 @@ def main():
     # Pré-chauffage asynchrone du démon LLM officiel (même architecture qu'Open Design)
     import threading
     threading.Thread(target=lambda: AgyDaemon.get_instance(), daemon=True).start()
+    trace("Step: AgyDaemon prewarm thread launched")
 
     # Lier les signaux du centre de contrôle à l'île
     control_center.settings_changed.connect(island.apply_settings)
@@ -117,12 +135,14 @@ def main():
     # 4. Serveur WebSocket d'arrière-plan pour pilotage Antigravity
     server = IslandWebSocketServer(island)
     server.start()
+    trace("Step: IslandWebSocketServer started")
 
     # 5. Moteur Push-to-Talk global (Raccourci Windows + Alt)
     ptt_engine = PushToTalkEngine(window_instance=island, mode=user_settings.get("ptt_mode", "hybrid"))
     island.ptt_engine = ptt_engine
     ptt_engine.start()
     control_center.settings_changed.connect(lambda s: ptt_engine.set_mode(s.get("ptt_mode", "hybrid")))
+    trace("Step: PushToTalkEngine started")
 
     # 6. Icône dans la zone de notification Windows (System Tray)
     tray = QSystemTrayIcon(create_tray_icon(), app)
@@ -146,12 +166,24 @@ def main():
     tray.setContextMenu(tray_menu)
     tray.setToolTip("Antigravity Island - En ligne")
     tray.show()
+    trace("Step: SystemTrayIcon shown")
+
+    # 7. Heartbeat diagnostic pour détecter le point exact de toute interruption
+    from PyQt6.QtCore import QTimer
+    hb_timer = QTimer(island)
+    hb_count = [0]
+    def on_hb():
+        hb_count[0] += 1
+        trace(f"Heartbeat: {hb_count[0]}s (State: {island.current_state})")
+    hb_timer.timeout.connect(on_hb)
+    hb_timer.start(1000)
 
     print("============================================================")
     print("[Antigravity Island] Application et Centre de controle lances.")
     print("Fenetre de configuration ouverte pour personnaliser l'application.")
     print("Icone active dans la zone de notification (System Tray).")
     print("============================================================")
+    trace("Step: Entering app.exec()")
 
     sys.exit(app.exec())
 

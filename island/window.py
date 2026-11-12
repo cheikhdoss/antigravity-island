@@ -1,9 +1,9 @@
 import sys
 import math
 from PyQt6.QtCore import (
-    Qt, QRectF, QPointF, QTimer, QVariantAnimation, QEasingCurve, pyqtSignal
+    Qt, QRect, QRectF, QPointF, QTimer, QVariantAnimation, QEasingCurve, pyqtSignal
 )
-from PyQt6.QtWidgets import QWidget, QApplication, QMenu
+from PyQt6.QtWidgets import QWidget, QApplication, QMenu, QLineEdit
 from PyQt6.QtGui import (
     QPainter, QColor, QPen, QBrush, QFont, QLinearGradient, QPainterPath, QRadialGradient
 )
@@ -167,6 +167,84 @@ def draw_vector_trash(painter: QPainter, cx: float, cy: float, color: QColor, sc
     painter.drawLine(QPointF(cx + 1.2 * s, cy - 1.5 * s), QPointF(cx + 1.0 * s, cy + 3.5 * s))
     painter.restore()
 
+def draw_vector_keyboard(painter: QPainter, cx: float, cy: float, color: QColor, scale: float = 1.0):
+    """Dessine une icône de clavier vectorielle épurée style Apple / SF Symbols."""
+    painter.save()
+    s = scale
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+    pen = QPen(color, 1.2 * s, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
+    painter.setPen(pen)
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+
+    # Cadre extérieur du clavier
+    kw = 16.0 * s
+    kh = 11.0 * s
+    rect = QRectF(cx - kw / 2.0, cy - kh / 2.0, kw, kh)
+    painter.drawRoundedRect(rect, 2.2 * s, 2.2 * s)
+
+    # Rangée supérieure (3 points de touches)
+    y1 = cy - 2.2 * s
+    painter.drawPoint(QPointF(cx - 4.5 * s, y1))
+    painter.drawPoint(QPointF(cx, y1))
+    painter.drawPoint(QPointF(cx + 4.5 * s, y1))
+
+    # Rangée médiane (3 points de touches décalés)
+    y2 = cy + 0.8 * s
+    painter.drawPoint(QPointF(cx - 3.2 * s, y2))
+    painter.drawPoint(QPointF(cx, y2))
+    painter.drawPoint(QPointF(cx + 3.2 * s, y2))
+
+    # Rangée inférieure (barre d'espace)
+    y3 = cy + 3.4 * s
+    painter.drawLine(QPointF(cx - 4.2 * s, y3), QPointF(cx + 4.2 * s, y3))
+    painter.restore()
+
+def draw_vector_send(painter: QPainter, cx: float, cy: float, color: QColor, scale: float = 1.0):
+    """Dessine une flèche vectorielle d'envoi vers le haut style bouton Apple / iMessage."""
+    painter.save()
+    s = scale
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+    pen = QPen(color, 1.4 * s, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
+    painter.setPen(pen)
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+
+    # Flèche orientée vers le haut
+    path = QPainterPath()
+    path.moveTo(cx, cy + 4.0 * s)
+    path.lineTo(cx, cy - 4.0 * s)
+    path.moveTo(cx - 3.5 * s, cy - 0.5 * s)
+    path.lineTo(cx, cy - 4.0 * s)
+    path.lineTo(cx + 3.5 * s, cy - 0.5 * s)
+    painter.drawPath(path)
+    painter.restore()
+
+def draw_vector_close(painter: QPainter, cx: float, cy: float, color: QColor, scale: float = 1.0):
+    """Dessine une croix de fermeture ✕ vectorielle fine."""
+    painter.save()
+    s = scale
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+    pen = QPen(color, 1.3 * s, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
+    painter.setPen(pen)
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    d = 3.5 * s
+    painter.drawLine(QPointF(cx - d, cy - d), QPointF(cx + d, cy + d))
+    painter.drawLine(QPointF(cx - d, cy + d), QPointF(cx + d, cy - d))
+    painter.restore()
+
+class PromptLineEdit(QLineEdit):
+    """Champ de saisie textuel optimisé pour l'esthétique Apple Obsidian Glass d'Antigravity Island."""
+    def __init__(self, parent=None, on_escape=None):
+        super().__init__(parent)
+        self.on_escape = on_escape
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key.Key_Escape:
+            if callable(self.on_escape):
+                self.on_escape()
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
 class IslandWindow(QWidget):
     """
     Fenêtre principale de l'encoche dynamique Antigravity.
@@ -196,7 +274,7 @@ class IslandWindow(QWidget):
         self.current_state = "idle"
         cfg = Config.STATES[self.current_state]
         
-        self.custom_idle_w = 148.0
+        self.custom_idle_w = 176.0
         self.custom_idle_h = 32.0
         
         self.cur_w = float(self.custom_idle_w)
@@ -208,10 +286,36 @@ class IslandWindow(QWidget):
 
         # Boutons d'interaction explicite & vectoriels
         self.btn_manual_ask_rect = QRectF()
+        self.btn_keyboard_ask_rect = QRectF()
         self.btn_expand_rect = QRectF()
         self.btn_collapse_rect = QRectF()
+        self.btn_prompt_send_rect = QRectF()
+        self.btn_prompt_cancel_rect = QRectF()
         self.hovered_action_btn = None
         self.ptt_engine = None
+
+        # Champ de saisie prompt clavier (Obsidian Glass)
+        self.prompt_input = PromptLineEdit(self, on_escape=self._on_prompt_escape)
+        self.prompt_input.setPlaceholderText("Demandez à Island... (Entrée pour valider)")
+        self.prompt_input.setStyleSheet("""
+            QLineEdit {
+                background-color: transparent;
+                border: none;
+                color: #f8fafc;
+                font-family: 'Segoe UI', system-ui, sans-serif;
+                font-size: 13px;
+                padding-left: 6px;
+                padding-right: 6px;
+                selection-background-color: #0284c7;
+                selection-color: #ffffff;
+            }
+            QLineEdit:focus {
+                border: none;
+                outline: none;
+            }
+        """)
+        self.prompt_input.returnPressed.connect(self._on_prompt_input_submitted)
+        self.prompt_input.hide()
 
         # Minuteur d'écoute manuelle (max 7.5s avant analyse automatique si pas de re-clic)
         self.manual_listen_timer = QTimer(self)
@@ -367,6 +471,10 @@ class IslandWindow(QWidget):
             return
             
         self.current_state = state_name
+
+        if state_name != "prompt_input":
+            if hasattr(self, "prompt_input") and self.prompt_input.isVisible():
+                self.prompt_input.hide()
         
         if state_name in ["idle", "listening", "thinking"]:
             self.action_title = ""
@@ -394,7 +502,7 @@ class IslandWindow(QWidget):
         self.start_r = self.cur_r
         
         if state_name == "idle":
-            self.custom_idle_w = max(148.0, float(self.custom_idle_w))
+            self.custom_idle_w = max(176.0, float(self.custom_idle_w))
             self.target_w = float(self.custom_idle_w)
             self.target_h = float(self.custom_idle_h)
             self.target_r = float(self.custom_idle_h / 2.0)
@@ -410,13 +518,18 @@ class IslandWindow(QWidget):
             self.target_w = float(target_cfg.width)
             self.target_h = max(float(target_cfg.height), min(200.0, float(needed_h)))
             self.target_r = 26.0
+        elif state_name == "prompt_input":
+            target_cfg = Config.STATES[state_name]
+            self.target_w = float(target_cfg.width)
+            self.target_h = float(target_cfg.height)
+            self.target_r = float(target_cfg.radius)
         elif state_name == "notification":
             self.target_w = 460.0
             self.target_h = 76.0
             self.target_r = 26.0
         elif state_name == "minimized_dock":
             wins_count = min(10, len(self.open_windows))
-            self.target_w = max(420.0, 70.0 + wins_count * 44.0 + 190.0)
+            self.target_w = max(460.0, 110.0 + wins_count * 44.0 + 190.0)
             self.target_h = 54.0
             self.target_r = 24.0
         elif state_name == "control_hub":
@@ -434,7 +547,7 @@ class IslandWindow(QWidget):
             self.target_h = float(target_cfg.height)
             self.target_r = float(target_cfg.radius)
         
-        if state_name in ["speaking", "action", "notification", "minimized_dock", "control_hub"]:
+        if state_name in ["speaking", "action", "notification", "minimized_dock", "control_hub", "prompt_input"]:
             self.anim.setEasingCurve(QEasingCurve.Type.OutCubic)
             self.anim.setDuration(280)
         else:
@@ -480,6 +593,102 @@ class IslandWindow(QWidget):
             self.ptt_engine.stop_manual_recording()
         else:
             self.set_state("thinking")
+
+    def trigger_keyboard_ask(self):
+        """Active le mode de saisie textuelle pour poser une question au clavier à Island."""
+        print("[Island] Déclenchement de la saisie textuelle au clavier.")
+        self.reading_timer.stop()
+        if getattr(self, "voice_engine", None):
+            self.voice_engine.stop()
+        self.set_state("prompt_input")
+        self.activateWindow()
+        self.raise_()
+        self.prompt_input.clear()
+        self.prompt_input.show()
+        self.prompt_input.setFocus()
+
+    def _on_prompt_escape(self):
+        """Annule la saisie clavier et replie l'Island en mode repos (idle)."""
+        if hasattr(self, "prompt_input"):
+            self.prompt_input.clear()
+            self.prompt_input.hide()
+        self.set_state("idle")
+
+    def _on_prompt_input_submitted(self):
+        """Valide et transmet la question saisie au clavier à Antigravity Island."""
+        if not hasattr(self, "prompt_input"):
+            return
+        query = self.prompt_input.text().strip()
+        if not query:
+            self._on_prompt_escape()
+            return
+
+        print(f"[Island] Question clavier reçue : '{query}'")
+        self.prompt_input.clear()
+        self.prompt_input.hide()
+        self.submit_text_query(query)
+
+    def submit_text_query(self, query: str):
+        """Exécute la requête textuelle en arrière-plan avec streaming et mémoire conversationnelle DeepTalk."""
+        self.reading_timer.stop()
+        if getattr(self, "voice_engine", None):
+            self.voice_engine.stop()
+
+        self.set_state("thinking")
+
+        import threading
+        import re
+        import time
+        import json
+        import os
+        from island.brain import generate_response
+
+        def worker():
+            accumulated_chunks = []
+            def on_stream_chunk(chunk: str):
+                accumulated_chunks.append(chunk)
+                streamed = "".join(accumulated_chunks).strip()
+                streamed = re.sub(r'[*_`]', '', streamed)
+                if streamed:
+                    self.state_change_requested.emit("stream_text", {"text": streamed})
+
+            try:
+                response_text = generate_response(query, on_chunk=on_stream_chunk)
+                if not response_text or not response_text.strip():
+                    response_text = "Je n'ai pas pu obtenir de réponse. Réessayez."
+                    is_status = True
+                else:
+                    is_status = False
+            except Exception as e:
+                print(f"[Island] Exception dans generate_response (clavier) : {e}")
+                response_text = "Une erreur est survenue lors de l'analyse."
+                is_status = True
+
+            # Sauvegarde pour traçabilité et historique
+            try:
+                appdata = os.environ.get("APPDATA", os.path.expanduser("~"))
+                storage_dir = os.path.join(appdata, "AntigravityIsland")
+                os.makedirs(storage_dir, exist_ok=True)
+                query_path = os.path.join(storage_dir, "last_keyboard_query.json")
+                payload = {
+                    "timestamp": time.time(),
+                    "query": query,
+                    "response": response_text,
+                    "has_audio": False,
+                    "input_type": "keyboard"
+                }
+                with open(query_path, "w", encoding="utf-8") as f:
+                    json.dump(payload, f, ensure_ascii=False, indent=2)
+            except Exception:
+                pass
+
+            self.state_change_requested.emit("speak", {
+                "text": response_text,
+                "is_status": is_status,
+                "is_answer": not is_status
+            })
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def _on_anim_step(self, progress: float):
         self.cur_w = self.start_w + (self.target_w - self.start_w) * progress
@@ -564,6 +773,12 @@ class IslandWindow(QWidget):
                 else:
                     # Reste ouvert indéfiniment jusqu'au clic utilisateur
                     self.reading_timer.stop()
+        elif action in ["trigger_keyboard_ask", "prompt_input", "ask_keyboard"]:
+            self.trigger_keyboard_ask()
+        elif action == "submit_text_query":
+            text = data.get("text", "")
+            if text:
+                self.submit_text_query(text)
         elif action == "audio_power":
             self.audio_power = float(data.get("power", 0.0))
         elif action == "action":
@@ -684,10 +899,19 @@ class IslandWindow(QWidget):
         prev_action_btn = self.hovered_action_btn
         if self.btn_manual_ask_rect.contains(pos):
             self.hovered_action_btn = "ask"
+        elif self.btn_keyboard_ask_rect.contains(pos):
+            self.hovered_action_btn = "keyboard_ask"
         elif self.btn_expand_rect.contains(pos):
             self.hovered_action_btn = "expand"
         elif self.btn_collapse_rect.contains(pos):
             self.hovered_action_btn = "collapse"
+        elif self.current_state == "prompt_input":
+            if self.btn_prompt_send_rect.contains(pos):
+                self.hovered_action_btn = "prompt_send"
+            elif self.btn_prompt_cancel_rect.contains(pos):
+                self.hovered_action_btn = "prompt_cancel"
+            else:
+                self.hovered_action_btn = None
         elif self.current_state == "control_hub":
             if self.btn_screenshot_rect.contains(pos):
                 self.hovered_action_btn = "screenshot"
@@ -714,7 +938,7 @@ class IslandWindow(QWidget):
                 self.hover_expand_timer.stop()
 
             pad_x = Config.SHADOW_BLUR + 16.0
-            dock_x = pad_x + 52.0  # Marge pour le bouton micro à gauche
+            dock_x = pad_x + 76.0  # Marge pour les boutons micro et clavier à gauche
             cy = self.height() / 2.0
             hovered = -1
             display_wins = self.open_windows[:10]
@@ -750,6 +974,18 @@ class IslandWindow(QWidget):
                 self.hovered_hub_notif = hovered_notif
                 self.update()
 
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key.Key_Escape:
+            if self.current_state == "prompt_input":
+                self._on_prompt_escape()
+                event.accept()
+                return
+            elif self.current_state in ["control_hub", "minimized_dock", "speaking", "notification"]:
+                self.set_state("idle")
+                event.accept()
+                return
+        super().keyPressEvent(event)
+
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
             pos = event.position()
@@ -759,17 +995,32 @@ class IslandWindow(QWidget):
                 self.trigger_manual_ask()
                 return
 
-            # 2. Clic sur le bouton d'expansion latérale (Super Hub)
+            # 2. Clic sur le bouton de saisie au clavier (Keyboard Ask)
+            if self.btn_keyboard_ask_rect.contains(pos):
+                self.trigger_keyboard_ask()
+                return
+
+            # 3. Clic sur le bouton d'expansion latérale (Super Hub)
             if self.btn_expand_rect.contains(pos):
                 self.set_state("control_hub")
                 return
 
-            # 3. Clic sur le bouton de repli / fermeture
+            # 4. Clic sur le bouton de repli / fermeture
             if self.btn_collapse_rect.contains(pos):
                 self.set_state("idle")
                 return
 
-            # 4. En état d'écoute vocale : un clic n'importe où sur l'Island valide et lance l'analyse
+            # 5. En état prompt_input : validation ou annulation
+            if self.current_state == "prompt_input":
+                if self.btn_prompt_send_rect.contains(pos):
+                    self._on_prompt_input_submitted()
+                    return
+                elif self.btn_prompt_cancel_rect.contains(pos):
+                    self._on_prompt_escape()
+                    return
+                return
+
+            # 6. En état d'écoute vocale : un clic n'importe où sur l'Island valide et lance l'analyse
             if self.current_state == "listening":
                 self.stop_manual_ask()
                 return
@@ -962,11 +1213,13 @@ class IslandWindow(QWidget):
                 self._draw_minimized_dock_content(painter, pill_rect)
             elif self.current_state == "control_hub":
                 self._draw_control_hub_content(painter, pill_rect)
+            elif self.current_state == "prompt_input":
+                self._draw_prompt_input_content(painter, pill_rect)
         finally:
             painter.end()
 
     def _draw_idle_content(self, painter: QPainter, rect: QRectF):
-        """Contenu compact au repos — Micro à gauche, aura centrale, bouton d'expansion latérale à droite."""
+        """Contenu compact au repos — Micro & Clavier à gauche, aura centrale, bouton d'expansion latérale à droite."""
         cy = rect.center().y()
         cx = rect.center().x()
         if self.style_mode == "iphonex":
@@ -992,7 +1245,25 @@ class IslandWindow(QWidget):
         mic_col = acc if is_h_ask else QColor(255, 255, 255, 200)
         draw_vector_microphone(painter, self.btn_manual_ask_rect.center().x(), cy, mic_col, scale=0.85)
 
-        # 2. Bouton tactile d'EXPANSION vers le Super Hub à DROITE
+        # 2. Bouton tactile Écrire / Clavier juste à côté du micro
+        btn_kb_w = 26.0
+        btn_kb_h = 24.0
+        btn_kb_x = btn_mic_x + btn_mic_w + 4.0
+        btn_kb_y = cy - btn_kb_h / 2.0
+        self.btn_keyboard_ask_rect = QRectF(btn_kb_x, btn_kb_y, btn_kb_w, btn_kb_h)
+
+        is_h_kb = (self.hovered_action_btn == "keyboard_ask")
+        if is_h_kb:
+            painter.setPen(QPen(QColor(acc.red(), acc.green(), acc.blue(), 160), 1.0))
+            painter.setBrush(QBrush(QColor(acc.red(), acc.green(), acc.blue(), 45)))
+        else:
+            painter.setPen(QPen(QColor(255, 255, 255, 25), 0.8))
+            painter.setBrush(QBrush(QColor(255, 255, 255, 12)))
+        painter.drawRoundedRect(self.btn_keyboard_ask_rect, 12.0, 12.0)
+        kb_col = acc if is_h_kb else QColor(255, 255, 255, 200)
+        draw_vector_keyboard(painter, self.btn_keyboard_ask_rect.center().x(), cy, kb_col, scale=0.85)
+
+        # 3. Bouton tactile d'EXPANSION vers le Super Hub à DROITE
         btn_exp_w = 26.0
         btn_exp_h = 24.0
         btn_exp_x = rect.right() - btn_exp_w - 6.0
@@ -1010,7 +1281,7 @@ class IslandWindow(QWidget):
         exp_col = QColor(255, 255, 255, 240) if is_h_exp else QColor(255, 255, 255, 160)
         draw_vector_expand_icon(painter, self.btn_expand_rect.center().x(), cy, exp_col, scale=0.9, is_expanded=False)
 
-        # 3. Aura centrale d'Antigravity Island
+        # 4. Aura centrale d'Antigravity Island
         dot_pos = QPointF(cx, cy)
         glow = QRadialGradient(dot_pos, 8.5)
         c_glow = QColor(acc)
@@ -1269,8 +1540,8 @@ class IslandWindow(QWidget):
         acc = getattr(self, "accent_color", Config.COLOR_ACCENT_CYAN)
 
         # 1. Bouton tactile Demander / Microphone à GAUCHE du dock
-        btn_mic_w = 32.0
-        btn_mic_h = 32.0
+        btn_mic_w = 30.0
+        btn_mic_h = 30.0
         btn_mic_x = pad_left
         btn_mic_y = cy - btn_mic_h / 2.0
         self.btn_manual_ask_rect = QRectF(btn_mic_x, btn_mic_y, btn_mic_w, btn_mic_h)
@@ -1284,9 +1555,27 @@ class IslandWindow(QWidget):
             painter.setBrush(QBrush(QColor(255, 255, 255, 14)))
         painter.drawRoundedRect(self.btn_manual_ask_rect, 10.0, 10.0)
         mic_col = acc if is_h_ask else QColor(255, 255, 255, 210)
-        draw_vector_microphone(painter, self.btn_manual_ask_rect.center().x(), cy, mic_col, scale=0.95)
+        draw_vector_microphone(painter, self.btn_manual_ask_rect.center().x(), cy, mic_col, scale=0.9)
 
-        # 2. Bouton tactile d'EXPANSION vers le Super Hub à DROITE du dock
+        # 2. Bouton tactile Écrire / Clavier juste à côté
+        btn_kb_w = 30.0
+        btn_kb_h = 30.0
+        btn_kb_x = btn_mic_x + btn_mic_w + 6.0
+        btn_kb_y = cy - btn_kb_h / 2.0
+        self.btn_keyboard_ask_rect = QRectF(btn_kb_x, btn_kb_y, btn_kb_w, btn_kb_h)
+
+        is_h_kb = (self.hovered_action_btn == "keyboard_ask")
+        if is_h_kb:
+            painter.setPen(QPen(QColor(acc.red(), acc.green(), acc.blue(), 180), 1.0))
+            painter.setBrush(QBrush(QColor(acc.red(), acc.green(), acc.blue(), 45)))
+        else:
+            painter.setPen(QPen(QColor(255, 255, 255, 28), 1.0))
+            painter.setBrush(QBrush(QColor(255, 255, 255, 14)))
+        painter.drawRoundedRect(self.btn_keyboard_ask_rect, 10.0, 10.0)
+        kb_col = acc if is_h_kb else QColor(255, 255, 255, 210)
+        draw_vector_keyboard(painter, self.btn_keyboard_ask_rect.center().x(), cy, kb_col, scale=0.9)
+
+        # 3. Bouton tactile d'EXPANSION vers le Super Hub à DROITE du dock
         hub_w = 66.0
         hub_h = 28.0
         hub_rect = QRectF(rect.right() - hub_w - 12.0, cy - hub_h / 2.0, hub_w, hub_h)
@@ -1305,8 +1594,8 @@ class IslandWindow(QWidget):
         painter.setFont(font_hub)
         painter.drawText(QRectF(hub_rect.left() + 23.0, cy - 10.0, hub_w - 24.0, 20.0), Qt.AlignmentFlag.AlignCenter, "Hub")
 
-        # 3. Icônes d'applications
-        dock_start_x = btn_mic_x + btn_mic_w + 12.0
+        # 4. Icônes d'applications
+        dock_start_x = btn_kb_x + btn_kb_w + 12.0
         hovered_win = None
         display_wins = self.open_windows[:10]
         for i, win in enumerate(display_wins):
@@ -1422,9 +1711,9 @@ class IslandWindow(QWidget):
         btn_y = rect.top() + 11.0
         btn_h = 24.0
 
-        # 2. Bouton tactile Demander / Microphone dans l'en-tête
-        ask_w = 110.0
-        ask_x = rect.left() + 176.0
+        # 2. Boutons tactiles Demander (Microphone) et Écrire (Clavier) dans l'en-tête
+        ask_w = 84.0
+        ask_x = rect.left() + 142.0
         self.btn_manual_ask_rect = QRectF(ask_x, btn_y, ask_w, btn_h)
         is_h_ask = (self.hovered_action_btn == "ask")
         if is_h_ask:
@@ -1434,10 +1723,27 @@ class IslandWindow(QWidget):
             painter.setPen(QPen(QColor(acc.red(), acc.green(), acc.blue(), 90), 1.0))
             painter.setBrush(QBrush(QColor(acc.red(), acc.green(), acc.blue(), 22)))
         painter.drawRoundedRect(self.btn_manual_ask_rect, 12.0, 12.0)
-        draw_vector_microphone(painter, ask_x + 14.0, btn_y + 12.0, QColor(acc if is_h_ask else QColor(255, 255, 255, 230)), scale=0.8)
+        draw_vector_microphone(painter, ask_x + 13.0, btn_y + 12.0, QColor(acc if is_h_ask else QColor(255, 255, 255, 230)), scale=0.8)
         painter.setPen(QColor(acc if is_h_ask else QColor(255, 255, 255, 230)))
         painter.setFont(QFont("Segoe UI", 7, QFont.Weight.Bold))
-        painter.drawText(QRectF(ask_x + 24.0, btn_y, ask_w - 28.0, btn_h), Qt.AlignmentFlag.AlignCenter, "Demander")
+        painter.drawText(QRectF(ask_x + 22.0, btn_y, ask_w - 26.0, btn_h), Qt.AlignmentFlag.AlignCenter, "Demander")
+
+        # Bouton tactile Écrire / Clavier dans l'en-tête
+        kb_w = 76.0
+        kb_x = ask_x + ask_w + 6.0
+        self.btn_keyboard_ask_rect = QRectF(kb_x, btn_y, kb_w, btn_h)
+        is_h_kb = (self.hovered_action_btn == "keyboard_ask")
+        if is_h_kb:
+            painter.setPen(QPen(QColor(acc.red(), acc.green(), acc.blue(), 180), 1.0))
+            painter.setBrush(QBrush(QColor(acc.red(), acc.green(), acc.blue(), 50)))
+        else:
+            painter.setPen(QPen(QColor(255, 255, 255, 45), 1.0))
+            painter.setBrush(QBrush(QColor(255, 255, 255, 14)))
+        painter.drawRoundedRect(self.btn_keyboard_ask_rect, 12.0, 12.0)
+        draw_vector_keyboard(painter, kb_x + 13.0, btn_y + 12.0, QColor(acc if is_h_kb else QColor(255, 255, 255, 230)), scale=0.8)
+        painter.setPen(QColor(acc if is_h_kb else QColor(255, 255, 255, 230)))
+        painter.setFont(QFont("Segoe UI", 7, QFont.Weight.Bold))
+        painter.drawText(QRectF(kb_x + 22.0, btn_y, kb_w - 26.0, btn_h), Qt.AlignmentFlag.AlignCenter, "Écrire")
 
         # 3. Bouton tactile de REPLI / FERMETURE à l'extrémité droite
         col_w = 26.0
@@ -1676,3 +1982,74 @@ class IslandWindow(QWidget):
                     Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
                     msg_s
                 )
+
+    def _draw_prompt_input_content(self, painter: QPainter, rect: QRectF):
+        """Rendu du champ de saisie de prompt au clavier avec esthétique Obsidian Apple Glass."""
+        cy = rect.center().y()
+        acc = getattr(self, "accent_color", Config.COLOR_ACCENT_CYAN)
+
+        # 1. Bordure d'accentuation subtile (Glow hairline cyan)
+        painter.save()
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        glow_pen = QPen(QColor(acc.red(), acc.green(), acc.blue(), 140), 1.0)
+        painter.setPen(glow_pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        radius = min(self.cur_r, self.cur_h / 2.0)
+        painter.drawRoundedRect(rect.adjusted(0.5, 0.5, -0.5, -0.5), radius, radius)
+        painter.restore()
+
+        # 2. Icône de clavier vectorielle à gauche
+        kb_icon_x = rect.left() + 24.0
+        draw_vector_keyboard(painter, kb_icon_x, cy, acc, scale=1.0)
+
+        # 3. Séparateur vertical fin
+        painter.setPen(QPen(QColor(255, 255, 255, 30), 1.0))
+        painter.drawLine(QPointF(rect.left() + 42.0, cy - 10.0), QPointF(rect.left() + 42.0, cy + 10.0))
+
+        # 4. Positionnement dynamique du QLineEdit enfant au centre
+        input_x = rect.left() + 48.0
+        btn_group_w = 64.0
+        input_w = max(100.0, rect.width() - 48.0 - btn_group_w - 12.0)
+        input_h = 28.0
+        input_y = cy - input_h / 2.0
+
+        geom = QRect(int(input_x), int(input_y), int(input_w), int(input_h))
+        if self.prompt_input.geometry() != geom:
+            self.prompt_input.setGeometry(geom)
+        if not self.prompt_input.isVisible():
+            self.prompt_input.show()
+            self.prompt_input.setFocus()
+
+        # 5. Bouton Envoi (Flèche vectorielle vers le haut / droite)
+        btn_send_w = 26.0
+        btn_send_h = 26.0
+        btn_send_x = rect.right() - 64.0
+        btn_send_y = cy - btn_send_h / 2.0
+        self.btn_prompt_send_rect = QRectF(btn_send_x, btn_send_y, btn_send_w, btn_send_h)
+
+        has_text = bool(self.prompt_input.text().strip())
+        is_h_send = (self.hovered_action_btn == "prompt_send")
+
+        if has_text:
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QBrush(acc if not is_h_send else QColor(acc.red(), acc.green(), acc.blue(), 220)))
+            painter.drawRoundedRect(self.btn_prompt_send_rect, 13.0, 13.0)
+            draw_vector_send(painter, self.btn_prompt_send_rect.center().x(), cy, QColor(10, 10, 14), scale=0.85)
+        else:
+            painter.setPen(QPen(QColor(255, 255, 255, 40 if is_h_send else 20), 1.0))
+            painter.setBrush(QBrush(QColor(255, 255, 255, 25 if is_h_send else 10)))
+            painter.drawRoundedRect(self.btn_prompt_send_rect, 13.0, 13.0)
+            draw_vector_send(painter, self.btn_prompt_send_rect.center().x(), cy, QColor(255, 255, 255, 160 if is_h_send else 90), scale=0.85)
+
+        # 6. Bouton Annuler / Fermer (Croix vectorielle ✕)
+        btn_cancel_w = 24.0
+        btn_cancel_h = 24.0
+        btn_cancel_x = rect.right() - 32.0
+        btn_cancel_y = cy - btn_cancel_h / 2.0
+        self.btn_prompt_cancel_rect = QRectF(btn_cancel_x, btn_cancel_y, btn_cancel_w, btn_cancel_h)
+
+        is_h_cancel = (self.hovered_action_btn == "prompt_cancel")
+        painter.setPen(QPen(QColor(255, 255, 255, 50 if is_h_cancel else 20), 1.0))
+        painter.setBrush(QBrush(QColor(255, 255, 255, 30 if is_h_cancel else 10)))
+        painter.drawRoundedRect(self.btn_prompt_cancel_rect, 12.0, 12.0)
+        draw_vector_close(painter, self.btn_prompt_cancel_rect.center().x(), cy, QColor(255, 255, 255, 220 if is_h_cancel else 130), scale=0.85)
