@@ -55,6 +55,118 @@ def create_iphone_x_notch_path(x: float, y: float, w: float, h: float, r_bottom:
     path.closeSubpath()
     return path
 
+def draw_vector_microphone(painter: QPainter, cx: float, cy: float, color: QColor, scale: float = 1.0):
+    """Dessine une icône de microphone vectorielle épurée style Apple / Siri."""
+    painter.save()
+    s = scale
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+    
+    # 1. Corps de la capsule (arrondi)
+    capsule_w = 6.0 * s
+    capsule_h = 10.0 * s
+    capsule_r = 3.0 * s
+    capsule_rect = QRectF(cx - capsule_w / 2.0, cy - capsule_h / 2.0 - 1.5 * s, capsule_w, capsule_h)
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.setBrush(QBrush(color))
+    painter.drawRoundedRect(capsule_rect, capsule_r, capsule_r)
+
+    # 2. Berceau sous la capsule
+    pen = QPen(color, 1.3 * s, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
+    painter.setPen(pen)
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    cradle_path = QPainterPath()
+    cradle_w = 11.0 * s
+    cradle_h = 9.0 * s
+    cradle_rect = QRectF(cx - cradle_w / 2.0, cy - 3.5 * s, cradle_w, cradle_h)
+    cradle_path.arcMoveTo(cradle_rect, 0)
+    cradle_path.arcTo(cradle_rect, 0, -180)
+    painter.drawPath(cradle_path)
+
+    # 3. Pied et base
+    painter.drawLine(QPointF(cx, cy + 5.5 * s), QPointF(cx, cy + 8.5 * s))
+    painter.drawLine(QPointF(cx - 3.5 * s, cy + 8.5 * s), QPointF(cx + 3.5 * s, cy + 8.5 * s))
+    painter.restore()
+
+def draw_vector_expand_icon(painter: QPainter, cx: float, cy: float, color: QColor, scale: float = 1.0, is_expanded: bool = False):
+    """Dessine une icône vectorielle d'expansion (chevron ⌄ / ⤢) ou de repli (⌃ / ✕)."""
+    painter.save()
+    s = scale
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+    pen = QPen(color, 1.4 * s, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
+    painter.setPen(pen)
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+
+    if not is_expanded:
+        path = QPainterPath()
+        path.moveTo(cx - 4.5 * s, cy - 2.0 * s)
+        path.lineTo(cx, cy + 2.5 * s)
+        path.lineTo(cx + 4.5 * s, cy - 2.0 * s)
+        painter.drawPath(path)
+    else:
+        path = QPainterPath()
+        path.moveTo(cx - 4.5 * s, cy + 2.0 * s)
+        path.lineTo(cx, cy - 2.5 * s)
+        path.lineTo(cx + 4.5 * s, cy + 2.0 * s)
+        painter.drawPath(path)
+    painter.restore()
+
+def draw_vector_camera(painter: QPainter, cx: float, cy: float, color: QColor, scale: float = 1.0):
+    painter.save()
+    s = scale
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+    pen = QPen(color, 1.2 * s, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
+    painter.setPen(pen)
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    painter.drawRoundedRect(QRectF(cx - 6.5 * s, cy - 4.0 * s, 13.0 * s, 9.0 * s), 2.0 * s, 2.0 * s)
+    painter.drawEllipse(QPointF(cx, cy + 0.5 * s), 2.5 * s, 2.5 * s)
+    painter.drawLine(QPointF(cx - 3.5 * s, cy - 5.5 * s), QPointF(cx - 1.5 * s, cy - 5.5 * s))
+    painter.restore()
+
+def draw_vector_monitor(painter: QPainter, cx: float, cy: float, color: QColor, scale: float = 1.0):
+    painter.save()
+    s = scale
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+    pen = QPen(color, 1.2 * s, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
+    painter.setPen(pen)
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    painter.drawRoundedRect(QRectF(cx - 6.5 * s, cy - 5.0 * s, 13.0 * s, 8.5 * s), 1.5 * s, 1.5 * s)
+    painter.drawLine(QPointF(cx, cy + 3.5 * s), QPointF(cx, cy + 6.0 * s))
+    painter.drawLine(QPointF(cx - 4.0 * s, cy + 6.0 * s), QPointF(cx + 4.0 * s, cy + 6.0 * s))
+    painter.restore()
+
+def draw_vector_gear(painter: QPainter, cx: float, cy: float, color: QColor, scale: float = 1.0):
+    painter.save()
+    s = scale
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+    pen = QPen(color, 1.2 * s, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
+    painter.setPen(pen)
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    painter.drawLine(QPointF(cx - 6.0 * s, cy - 2.5 * s), QPointF(cx + 6.0 * s, cy - 2.5 * s))
+    painter.drawLine(QPointF(cx - 6.0 * s, cy + 2.5 * s), QPointF(cx + 6.0 * s, cy + 2.5 * s))
+    painter.setBrush(QBrush(color))
+    painter.drawEllipse(QPointF(cx - 2.0 * s, cy - 2.5 * s), 1.8 * s, 1.8 * s)
+    painter.drawEllipse(QPointF(cx + 2.0 * s, cy + 2.5 * s), 1.8 * s, 1.8 * s)
+    painter.restore()
+
+def draw_vector_trash(painter: QPainter, cx: float, cy: float, color: QColor, scale: float = 1.0):
+    painter.save()
+    s = scale
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+    pen = QPen(color, 1.2 * s, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
+    painter.setPen(pen)
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    painter.drawLine(QPointF(cx - 5.5 * s, cy - 4.0 * s), QPointF(cx + 5.5 * s, cy - 4.0 * s))
+    painter.drawLine(QPointF(cx - 2.0 * s, cy - 5.5 * s), QPointF(cx + 2.0 * s, cy - 5.5 * s))
+    p = QPainterPath()
+    p.moveTo(cx - 4.0 * s, cy - 3.5 * s)
+    p.lineTo(cx - 3.2 * s, cy + 5.5 * s)
+    p.lineTo(cx + 3.2 * s, cy + 5.5 * s)
+    p.lineTo(cx + 4.0 * s, cy - 3.5 * s)
+    painter.drawPath(p)
+    painter.drawLine(QPointF(cx - 1.2 * s, cy - 1.5 * s), QPointF(cx - 1.0 * s, cy + 3.5 * s))
+    painter.drawLine(QPointF(cx + 1.2 * s, cy - 1.5 * s), QPointF(cx + 1.0 * s, cy + 3.5 * s))
+    painter.restore()
+
 class IslandWindow(QWidget):
     """
     Fenêtre principale de l'encoche dynamique Antigravity.
@@ -84,7 +196,7 @@ class IslandWindow(QWidget):
         self.current_state = "idle"
         cfg = Config.STATES[self.current_state]
         
-        self.custom_idle_w = 120.0
+        self.custom_idle_w = 148.0
         self.custom_idle_h = 32.0
         
         self.cur_w = float(self.custom_idle_w)
@@ -93,6 +205,23 @@ class IslandWindow(QWidget):
         self.target_w = self.cur_w
         self.target_h = self.cur_h
         self.target_r = self.cur_r
+
+        # Boutons d'interaction explicite & vectoriels
+        self.btn_manual_ask_rect = QRectF()
+        self.btn_expand_rect = QRectF()
+        self.btn_collapse_rect = QRectF()
+        self.hovered_action_btn = None
+        self.ptt_engine = None
+
+        # Minuteur d'écoute manuelle (max 7.5s avant analyse automatique si pas de re-clic)
+        self.manual_listen_timer = QTimer(self)
+        self.manual_listen_timer.setSingleShot(True)
+        self.manual_listen_timer.timeout.connect(self.stop_manual_ask)
+
+        # Minuteur debounce d'expansion vers le haut (anti-saccade)
+        self.hover_expand_timer = QTimer(self)
+        self.hover_expand_timer.setSingleShot(True)
+        self.hover_expand_timer.timeout.connect(self._on_hover_expand_timeout)
 
         # Paramètres de disposition et style
         self.style_mode = "island"      # "island" (pilule) ou "iphonex" (encoche iPhone X)
@@ -232,6 +361,10 @@ class IslandWindow(QWidget):
     def set_state(self, state_name: str, payload: dict = None):
         if state_name not in Config.STATES:
             return
+
+        # Éviter les saccades si l'état cible est déjà actif et en cours d'animation
+        if state_name == self.current_state and self.anim.state() == QVariantAnimation.State.Running:
+            return
             
         self.current_state = state_name
         
@@ -261,6 +394,7 @@ class IslandWindow(QWidget):
         self.start_r = self.cur_r
         
         if state_name == "idle":
+            self.custom_idle_w = max(148.0, float(self.custom_idle_w))
             self.target_w = float(self.custom_idle_w)
             self.target_h = float(self.custom_idle_h)
             self.target_r = float(self.custom_idle_h / 2.0)
@@ -282,7 +416,7 @@ class IslandWindow(QWidget):
             self.target_r = 26.0
         elif state_name == "minimized_dock":
             wins_count = min(10, len(self.open_windows))
-            self.target_w = max(380.0, 70.0 + wins_count * 44.0 + 190.0)
+            self.target_w = max(420.0, 70.0 + wins_count * 44.0 + 190.0)
             self.target_h = 54.0
             self.target_r = 24.0
         elif state_name == "control_hub":
@@ -302,14 +436,50 @@ class IslandWindow(QWidget):
         
         if state_name in ["speaking", "action", "notification", "minimized_dock", "control_hub"]:
             self.anim.setEasingCurve(QEasingCurve.Type.OutCubic)
-            self.anim.setDuration(340)
+            self.anim.setDuration(280)
         else:
-            self.anim.setEasingCurve(QEasingCurve.Type.OutBack)
-            self.anim.setDuration(300)
+            self.anim.setEasingCurve(QEasingCurve.Type.OutQuad)
+            self.anim.setDuration(260)
             
         self.anim.setStartValue(0.0)
         self.anim.setEndValue(1.0)
         self.anim.start()
+
+    def _on_hover_expand_timeout(self):
+        """Déclenché si le curseur est resté sur la zone haute du dock de manière stable."""
+        from PyQt6.QtGui import QCursor
+        global_pos = QCursor.pos()
+        if self.geometry().contains(global_pos) and self.current_state == "minimized_dock":
+            local_pos = self.mapFromGlobal(global_pos)
+            if local_pos.y() <= 16.0:
+                self.set_state("control_hub")
+
+    def trigger_manual_ask(self):
+        """Déclenche la demande manuelle à l'Island (enregistrement vocal ou toggle écoute)."""
+        if self.current_state == "listening":
+            self.stop_manual_ask()
+            return
+
+        print("[Island] Déclenchement manuel de la demande à l'Island.")
+        self.reading_timer.stop()
+        if getattr(self, "voice_engine", None):
+            self.voice_engine.stop()
+
+        if getattr(self, "ptt_engine", None):
+            self.ptt_engine.start_manual_recording()
+        else:
+            self.set_state("listening")
+
+        # Watchdog d'écoute manuelle (7.5s max si l'utilisateur ne clique pas à nouveau)
+        self.manual_listen_timer.start(7500)
+
+    def stop_manual_ask(self):
+        """Arrête l'enregistrement manuel et passe à l'analyse de la requête."""
+        self.manual_listen_timer.stop()
+        if getattr(self, "ptt_engine", None):
+            self.ptt_engine.stop_manual_recording()
+        else:
+            self.set_state("thinking")
 
     def _on_anim_step(self, progress: float):
         self.cur_w = self.start_w + (self.target_w - self.start_w) * progress
@@ -479,6 +649,11 @@ class IslandWindow(QWidget):
     def _on_leave_timeout(self):
         from PyQt6.QtGui import QCursor
         global_pos = QCursor.pos()
+        # En mode notch, si la souris est tout en haut de l'écran (Y <= 3), l'utilisateur survole l'encoche
+        if self.position_mode == "notch" and global_pos.y() <= 3:
+            geo = self.geometry()
+            if geo.x() <= global_pos.x() <= geo.x() + geo.width():
+                return
         if not self.geometry().contains(global_pos):
             if self.current_state in ["minimized_dock", "control_hub"]:
                 self.set_state("idle")
@@ -493,30 +668,53 @@ class IslandWindow(QWidget):
     def leaveEvent(self, event):
         super().leaveEvent(event)
         self.hovered_dock_index = -1
-        self.hovered_hub_btn = None
+        self.hovered_action_btn = None
         self.hovered_hub_app = -1
         self.hovered_hub_notif = -1
-        self._hover_top_count = 0
+        self.hover_expand_timer.stop()
         if self.current_state in ["minimized_dock", "control_hub"]:
             self.leave_debounce_timer.start(350)
 
     def mouseMoveEvent(self, event):
         super().mouseMoveEvent(event)
         pos = event.position()
+        self.leave_debounce_timer.stop()
+
+        # Détection du survol des boutons d'actions tactiles
+        prev_action_btn = self.hovered_action_btn
+        if self.btn_manual_ask_rect.contains(pos):
+            self.hovered_action_btn = "ask"
+        elif self.btn_expand_rect.contains(pos):
+            self.hovered_action_btn = "expand"
+        elif self.btn_collapse_rect.contains(pos):
+            self.hovered_action_btn = "collapse"
+        elif self.current_state == "control_hub":
+            if self.btn_screenshot_rect.contains(pos):
+                self.hovered_action_btn = "screenshot"
+            elif self.btn_desktop_rect.contains(pos):
+                self.hovered_action_btn = "desktop"
+            elif self.btn_settings_rect.contains(pos):
+                self.hovered_action_btn = "settings"
+            elif self.btn_clear_notifs_rect.contains(pos):
+                self.hovered_action_btn = "clear_notifs"
+            else:
+                self.hovered_action_btn = None
+        else:
+            self.hovered_action_btn = None
+
+        if self.hovered_action_btn != prev_action_btn:
+            self.update()
 
         if self.current_state == "minimized_dock":
-            # Expansion dynamique vers le Super Hub si le curseur remonte vers le bord supérieur de l'encoche
-            if pos.y() <= 16.0:
-                self._hover_top_count = getattr(self, "_hover_top_count", 0) + 1
-                if self._hover_top_count >= 2:
-                    self.set_state("control_hub")
-                    self._hover_top_count = 0
-                    return
+            # Expansion fluide et sans saccade vers le Super Hub si le curseur remonte de façon stable
+            if pos.y() <= 14.0:
+                if not self.hover_expand_timer.isActive():
+                    self.hover_expand_timer.start(160)
             else:
-                self._hover_top_count = 0
+                self.hover_expand_timer.stop()
 
             pad_x = Config.SHADOW_BLUR + 16.0
-            dock_x = pad_x + 18.0
+            dock_x = pad_x + 52.0  # Marge pour le bouton micro à gauche
             cy = self.height() / 2.0
             hovered = -1
             display_wins = self.open_windows[:10]
@@ -530,44 +728,53 @@ class IslandWindow(QWidget):
                 self.update()
 
         elif self.current_state == "control_hub":
-            # 1. Détection des boutons d'actions rapides
-            if self.btn_screenshot_rect.contains(pos):
-                self.hovered_hub_btn = "screenshot"
-            elif self.btn_desktop_rect.contains(pos):
-                self.hovered_hub_btn = "desktop"
-            elif self.btn_settings_rect.contains(pos):
-                self.hovered_hub_btn = "settings"
-            elif self.btn_clear_notifs_rect.contains(pos):
-                self.hovered_hub_btn = "clear_notifs"
-            else:
-                self.hovered_hub_btn = None
+            self.hover_expand_timer.stop()
 
-            # 2. Détection de survol des cartes d'applications
+            # Survol des cartes d'applications
             hovered_app = -1
             for i, r in enumerate(self.hub_app_rects):
                 if r.contains(pos):
                     hovered_app = i
                     break
-            self.hovered_hub_app = hovered_app
+            if hovered_app != self.hovered_hub_app:
+                self.hovered_hub_app = hovered_app
+                self.update()
 
-            # 3. Détection de survol des cartes de notifications
+            # Survol des notifications
             hovered_notif = -1
             for i, r in enumerate(self.hub_notif_rects):
                 if r.contains(pos):
                     hovered_notif = i
                     break
-            self.hovered_hub_notif = hovered_notif
-
-            self.update()
+            if hovered_notif != self.hovered_hub_notif:
+                self.hovered_hub_notif = hovered_notif
+                self.update()
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
             pos = event.position()
-            if self.current_state == "minimized_dock":
-                if getattr(self, "dock_hub_btn_rect", QRectF()).contains(pos):
-                    self.set_state("control_hub")
-                    return
 
+            # 1. Clic sur le bouton de demande manuelle à l'Island (Ask / Mic)
+            if self.btn_manual_ask_rect.contains(pos):
+                self.trigger_manual_ask()
+                return
+
+            # 2. Clic sur le bouton d'expansion latérale (Super Hub)
+            if self.btn_expand_rect.contains(pos):
+                self.set_state("control_hub")
+                return
+
+            # 3. Clic sur le bouton de repli / fermeture
+            if self.btn_collapse_rect.contains(pos):
+                self.set_state("idle")
+                return
+
+            # 4. En état d'écoute vocale : un clic n'importe où sur l'Island valide et lance l'analyse
+            if self.current_state == "listening":
+                self.stop_manual_ask()
+                return
+
+            if self.current_state == "minimized_dock":
                 display_wins = self.open_windows[:10]
                 if 0 <= self.hovered_dock_index < len(display_wins):
                     win = display_wins[self.hovered_dock_index]
@@ -577,7 +784,7 @@ class IslandWindow(QWidget):
                     return
 
             elif self.current_state == "control_hub":
-                # 1. Clic sur les boutons d'action rapide
+                # Actions rapides
                 if self.btn_screenshot_rect.contains(pos):
                     self.take_quick_screenshot()
                     return
@@ -598,7 +805,7 @@ class IslandWindow(QWidget):
                     self.update()
                     return
 
-                # 2. Clic sur une carte d'application dans la grille
+                # Clic sur une carte d'application dans la grille
                 if 0 <= self.hovered_hub_app < len(self.open_windows):
                     win = self.open_windows[self.hovered_hub_app]
                     self.tracker.activate_window(win["hwnd"])
@@ -606,7 +813,7 @@ class IslandWindow(QWidget):
                     self.set_state("idle")
                     return
 
-                # 3. Clic sur une notification dans le flux
+                # Clic sur une notification dans le flux
                 if 0 <= self.hovered_hub_notif < len(self.notif_mgr.items):
                     self.notif_mgr.current_index = self.hovered_hub_notif
                     self.set_state("notification")
@@ -636,6 +843,7 @@ class IslandWindow(QWidget):
                     self.notif_timer.stop()
                     self.set_state("idle")
                     return
+
             elif self.current_state != "idle":
                 self.set_state("idle")
                 return
@@ -758,16 +966,52 @@ class IslandWindow(QWidget):
             painter.end()
 
     def _draw_idle_content(self, painter: QPainter, rect: QRectF):
-        """Contenu compact au repos — Point lumineux positionné strictement à GAUCHE."""
+        """Contenu compact au repos — Micro à gauche, aura centrale, bouton d'expansion latérale à droite."""
         cy = rect.center().y()
+        cx = rect.center().x()
         if self.style_mode == "iphonex":
-            cy += 2.0  # Légère compensation sous la grille haut-parleur
-            
-        dot_x = rect.left() + min(18.0, rect.height() * 0.65)
-        dot_pos = QPointF(dot_x, cy)
+            cy += 2.0
+
         acc = getattr(self, "accent_color", Config.COLOR_ACCENT_CYAN)
-        
-        # Halo lumineux doux à gauche
+
+        # 1. Bouton tactile Demander / Microphone à GAUCHE
+        btn_mic_w = 26.0
+        btn_mic_h = 24.0
+        btn_mic_x = rect.left() + 6.0
+        btn_mic_y = cy - btn_mic_h / 2.0
+        self.btn_manual_ask_rect = QRectF(btn_mic_x, btn_mic_y, btn_mic_w, btn_mic_h)
+
+        is_h_ask = (self.hovered_action_btn == "ask")
+        if is_h_ask:
+            painter.setPen(QPen(QColor(acc.red(), acc.green(), acc.blue(), 160), 1.0))
+            painter.setBrush(QBrush(QColor(acc.red(), acc.green(), acc.blue(), 45)))
+        else:
+            painter.setPen(QPen(QColor(255, 255, 255, 25), 0.8))
+            painter.setBrush(QBrush(QColor(255, 255, 255, 12)))
+        painter.drawRoundedRect(self.btn_manual_ask_rect, 12.0, 12.0)
+        mic_col = acc if is_h_ask else QColor(255, 255, 255, 200)
+        draw_vector_microphone(painter, self.btn_manual_ask_rect.center().x(), cy, mic_col, scale=0.85)
+
+        # 2. Bouton tactile d'EXPANSION vers le Super Hub à DROITE
+        btn_exp_w = 26.0
+        btn_exp_h = 24.0
+        btn_exp_x = rect.right() - btn_exp_w - 6.0
+        btn_exp_y = cy - btn_exp_h / 2.0
+        self.btn_expand_rect = QRectF(btn_exp_x, btn_exp_y, btn_exp_w, btn_exp_h)
+
+        is_h_exp = (self.hovered_action_btn == "expand")
+        if is_h_exp:
+            painter.setPen(QPen(QColor(255, 255, 255, 120), 1.0))
+            painter.setBrush(QBrush(QColor(255, 255, 255, 38)))
+        else:
+            painter.setPen(QPen(QColor(255, 255, 255, 25), 0.8))
+            painter.setBrush(QBrush(QColor(255, 255, 255, 12)))
+        painter.drawRoundedRect(self.btn_expand_rect, 12.0, 12.0)
+        exp_col = QColor(255, 255, 255, 240) if is_h_exp else QColor(255, 255, 255, 160)
+        draw_vector_expand_icon(painter, self.btn_expand_rect.center().x(), cy, exp_col, scale=0.9, is_expanded=False)
+
+        # 3. Aura centrale d'Antigravity Island
+        dot_pos = QPointF(cx, cy)
         glow = QRadialGradient(dot_pos, 8.5)
         c_glow = QColor(acc)
         c_glow.setAlpha(180)
@@ -779,36 +1023,39 @@ class IslandWindow(QWidget):
         painter.setBrush(QBrush(glow))
         painter.drawEllipse(dot_pos, 8.5, 8.5)
 
-        # Pastille lumineuse compacte à gauche
         painter.setBrush(QBrush(acc))
         painter.drawEllipse(dot_pos, 3.2, 3.2)
 
-        # Indicateur discret d'applications ouvertes à droite
+        # 4. Indicateur discret d'applications ouvertes
         if len(self.open_windows) > 0:
             count = len(self.open_windows)
-            badge_x = rect.right() - 28.0
+            badge_x = btn_exp_x - 22.0
             painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(QBrush(QColor(255, 255, 255, 25)))
+            painter.setBrush(QBrush(QColor(255, 255, 255, 22)))
             painter.drawRoundedRect(QRectF(badge_x, cy - 7.0, 18.0, 14.0), 7.0, 7.0)
             painter.setPen(QColor(255, 255, 255, 170))
-            font_cnt = QFont("Segoe UI", 7, QFont.Weight.Bold)
-            painter.setFont(font_cnt)
-            painter.drawText(QRectF(badge_x, cy - 7.0, 18.0, 14.0), Qt.AlignmentFlag.AlignCenter, str(count))
             font_cnt = QFont("Segoe UI", 7, QFont.Weight.Bold)
             painter.setFont(font_cnt)
             painter.drawText(QRectF(badge_x, cy - 7.0, 18.0, 14.0), Qt.AlignmentFlag.AlignCenter, str(count))
 
     def _draw_listening_content(self, painter: QPainter, rect: QRectF):
         cy = rect.center().y()
-        dot_x = rect.left() + 22.0
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QBrush(Config.COLOR_ACCENT_GREEN))
-        painter.drawEllipse(QPointF(dot_x, cy), 4.0, 4.0)
+        btn_mic_w = 30.0
+        btn_mic_h = 28.0
+        btn_mic_x = rect.left() + 14.0
+        btn_mic_y = cy - btn_mic_h / 2.0
+        self.btn_manual_ask_rect = QRectF(btn_mic_x, btn_mic_y, btn_mic_w, btn_mic_h)
+
+        # Micro vert tactile
+        painter.setPen(QPen(QColor(34, 197, 94, 180), 1.0))
+        painter.setBrush(QBrush(QColor(34, 197, 94, 40)))
+        painter.drawRoundedRect(self.btn_manual_ask_rect, 10.0, 10.0)
+        draw_vector_microphone(painter, self.btn_manual_ask_rect.center().x(), cy, Config.COLOR_ACCENT_GREEN, scale=0.9)
 
         painter.setPen(Config.COLOR_TEXT_PRIMARY)
         font = QFont("Segoe UI", 9, QFont.Weight.Medium)
         painter.setFont(font)
-        text_rect = QRectF(dot_x + 14.0, rect.top(), 160.0, rect.height())
+        text_rect = QRectF(btn_mic_x + btn_mic_w + 10.0, rect.top(), 180.0, rect.height())
         painter.drawText(text_rect, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, "À votre écoute...")
 
         wave_cx = rect.right() - 46.0
@@ -1017,13 +1264,53 @@ class IslandWindow(QWidget):
         )
 
     def _draw_minimized_dock_content(self, painter: QPainter, rect: QRectF):
-        pad_left = rect.left() + 18.0
+        pad_left = rect.left() + 12.0
         cy = rect.center().y()
+        acc = getattr(self, "accent_color", Config.COLOR_ACCENT_CYAN)
 
+        # 1. Bouton tactile Demander / Microphone à GAUCHE du dock
+        btn_mic_w = 32.0
+        btn_mic_h = 32.0
+        btn_mic_x = pad_left
+        btn_mic_y = cy - btn_mic_h / 2.0
+        self.btn_manual_ask_rect = QRectF(btn_mic_x, btn_mic_y, btn_mic_w, btn_mic_h)
+
+        is_h_ask = (self.hovered_action_btn == "ask")
+        if is_h_ask:
+            painter.setPen(QPen(QColor(acc.red(), acc.green(), acc.blue(), 180), 1.0))
+            painter.setBrush(QBrush(QColor(acc.red(), acc.green(), acc.blue(), 45)))
+        else:
+            painter.setPen(QPen(QColor(255, 255, 255, 28), 1.0))
+            painter.setBrush(QBrush(QColor(255, 255, 255, 14)))
+        painter.drawRoundedRect(self.btn_manual_ask_rect, 10.0, 10.0)
+        mic_col = acc if is_h_ask else QColor(255, 255, 255, 210)
+        draw_vector_microphone(painter, self.btn_manual_ask_rect.center().x(), cy, mic_col, scale=0.95)
+
+        # 2. Bouton tactile d'EXPANSION vers le Super Hub à DROITE du dock
+        hub_w = 66.0
+        hub_h = 28.0
+        hub_rect = QRectF(rect.right() - hub_w - 12.0, cy - hub_h / 2.0, hub_w, hub_h)
+        self.btn_expand_rect = hub_rect
+        is_h_exp = (self.hovered_action_btn == "expand")
+        if is_h_exp:
+            painter.setPen(QPen(QColor(255, 255, 255, 100), 1.0))
+            painter.setBrush(QBrush(QColor(255, 255, 255, 35)))
+        else:
+            painter.setPen(QPen(QColor(255, 255, 255, 30), 1.0))
+            painter.setBrush(QBrush(QColor(255, 255, 255, 16)))
+        painter.drawRoundedRect(hub_rect, 9.0, 9.0)
+        draw_vector_expand_icon(painter, hub_rect.left() + 15.0, cy, QColor(255, 255, 255, 240 if is_h_exp else 180), scale=0.85, is_expanded=False)
+        painter.setPen(QColor(255, 255, 255, 230 if is_h_exp else 190))
+        font_hub = QFont("Segoe UI", 7, QFont.Weight.Bold)
+        painter.setFont(font_hub)
+        painter.drawText(QRectF(hub_rect.left() + 23.0, cy - 10.0, hub_w - 24.0, 20.0), Qt.AlignmentFlag.AlignCenter, "Hub")
+
+        # 3. Icônes d'applications
+        dock_start_x = btn_mic_x + btn_mic_w + 12.0
         hovered_win = None
-        display_wins = self.open_windows[:10]  # Max 10 dans le dock compact
+        display_wins = self.open_windows[:10]
         for i, win in enumerate(display_wins):
-            tile_x = pad_left + i * 44.0
+            tile_x = dock_start_x + i * 44.0
             tile_rect = QRectF(tile_x, cy - 18.0, 36.0, 36.0)
 
             is_hovered = (i == self.hovered_dock_index)
@@ -1037,7 +1324,6 @@ class IslandWindow(QWidget):
 
             painter.drawRoundedRect(tile_rect, 9.0, 9.0)
 
-            # Dessin de l'icône de l'application via le tracker thread-safe
             app_name = win.get("app_name", "")
             pix = self.tracker.get_app_icon(app_name, allow_generate=False)
             if pix and not pix.isNull():
@@ -1049,7 +1335,6 @@ class IslandWindow(QWidget):
                 let = (app_name[:1] if app_name else "A").upper()
                 painter.drawText(tile_rect, Qt.AlignmentFlag.AlignCenter, let)
 
-            # Badge de statut (Vert = actif, Orange = minimisé)
             if win.get("is_active"):
                 painter.setPen(Qt.PenStyle.NoPen)
                 painter.setBrush(QBrush(QColor(34, 197, 94)))
@@ -1059,20 +1344,8 @@ class IslandWindow(QWidget):
                 painter.setBrush(QBrush(QColor(249, 115, 22)))
                 painter.drawEllipse(QPointF(tile_rect.right() - 4.0, tile_rect.bottom() - 4.0), 2.5, 2.5)
 
-        # Bouton d'accès au Hub sur l'extrémité droite
-        hub_w = 64.0
-        hub_rect = QRectF(rect.right() - hub_w - 12.0, cy - 13.0, hub_w, 26.0)
-        self.dock_hub_btn_rect = hub_rect
-        painter.setPen(QPen(QColor(255, 255, 255, 40), 1.0))
-        painter.setBrush(QBrush(QColor(255, 255, 255, 20)))
-        painter.drawRoundedRect(hub_rect, 8.0, 8.0)
-        painter.setPen(QColor(255, 255, 255, 210))
-        font_hub = QFont("Segoe UI", 7, QFont.Weight.Bold)
-        painter.setFont(font_hub)
-        painter.drawText(hub_rect, Qt.AlignmentFlag.AlignCenter, "🎛️ Hub")
-
-        # Label d'information / Aperçu textuel de la fenêtre
-        label_x = pad_left + len(display_wins) * 44.0 + 8.0
+        # 4. Label d'information de fenêtre
+        label_x = dock_start_x + len(display_wins) * 44.0 + 8.0
         label_w = max(40.0, hub_rect.left() - label_x - 10.0)
         
         if hovered_win:
@@ -1081,7 +1354,6 @@ class IslandWindow(QWidget):
             status_str = "ACTIF" if is_act else ("RÉDUIT" if is_min else "OUVERT")
             status_col = QColor(34, 197, 94) if is_act else (QColor(249, 115, 22) if is_min else QColor(56, 189, 248))
 
-            # Nom application + Badge
             painter.setPen(Config.COLOR_TEXT_PRIMARY)
             font_t = QFont("Segoe UI", 8, QFont.Weight.Bold)
             painter.setFont(font_t)
@@ -1090,7 +1362,6 @@ class IslandWindow(QWidget):
                 Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
                 hovered_win.get("app_name", "")
             )
-            # Badge statut compact
             badge_r = QRectF(label_x + label_w - 56.0, cy - 14.0, 52.0, 13.0)
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(QBrush(QColor(status_col.red(), status_col.green(), status_col.blue(), 40)))
@@ -1099,7 +1370,6 @@ class IslandWindow(QWidget):
             painter.setFont(QFont("Segoe UI", 6, QFont.Weight.Bold))
             painter.drawText(badge_r, Qt.AlignmentFlag.AlignCenter, status_str)
 
-            # Titre complet de la fenêtre
             painter.setPen(QColor(255, 255, 255, 210))
             font_sub = QFont("Segoe UI", 7, QFont.Weight.Normal)
             painter.setFont(font_sub)
@@ -1116,7 +1386,7 @@ class IslandWindow(QWidget):
             font_hint = QFont("Segoe UI", 8, QFont.Weight.Normal)
             painter.setFont(font_hint)
             nb = len(self.open_windows)
-            status_txt = f"{nb} fenêtre{'s' if nb > 1 else ''} • Clic pour basculer" if nb > 0 else "Aucune fenêtre détectée"
+            status_txt = f"{nb} fenêtre{'s' if nb > 1 else ''} • Clic pour basculer" if nb > 0 else "Aucune fenêtre"
             painter.drawText(
                 QRectF(label_x, cy - 9.0, label_w, 18.0),
                 Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
@@ -1125,15 +1395,17 @@ class IslandWindow(QWidget):
 
     def _draw_control_hub_content(self, painter: QPainter, rect: QRectF):
         """
-        Rendu du Super Hub de Contrôle (Hover vers le haut / plein écran de l'Island) :
-        - En-tête avec Actions Rapides (Screenshot, Bureau, Réglages, Vider notifs).
-        - Colonne gauche : Applications ouvertes avec disposition en grille de cartes élégantes (icône, statut, titre).
-        - Colonne droite : Historique complet des notifications avec logos et possibilité d'effacer.
+        Rendu du Super Hub de Contrôle (Hover intentionnel ou Clic sur bouton Agrandir) :
+        - Bouton explicite 'Demander' avec microphone vectoriel pour poser toute question à la souris.
+        - Bouton explicite de repli / fermeture sur le bord droit.
+        - En-tête avec Actions Rapides vectorielles (Capture, Bureau, Réglages, Vider notifs).
+        - Colonne gauche : Grille d'applications ouvertes.
+        - Colonne droite : Historique des notifications.
         """
         acc = getattr(self, "accent_color", Config.COLOR_ACCENT_CYAN)
 
         # 1. En-tête & Titre
-        dot_pos = QPointF(rect.left() + 22.0, rect.top() + 23.0)
+        dot_pos = QPointF(rect.left() + 20.0, rect.top() + 23.0)
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QBrush(acc))
         painter.drawEllipse(dot_pos, 4.0, 4.0)
@@ -1142,59 +1414,92 @@ class IslandWindow(QWidget):
         painter.setFont(font_head)
         painter.setPen(Config.COLOR_TEXT_PRIMARY)
         painter.drawText(
-            QRectF(rect.left() + 32.0, rect.top() + 11.0, 150.0, 24.0),
+            QRectF(rect.left() + 30.0, rect.top() + 11.0, 140.0, 24.0),
             Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
             "TABLEAU DE BORD"
         )
 
-        # 2. Boutons d'actions rapides (Alignés à droite)
         btn_y = rect.top() + 11.0
         btn_h = 24.0
 
-        # 2.1 Bouton Vider notifs
-        self.btn_clear_notifs_rect = QRectF(rect.right() - 104.0, btn_y, 92.0, btn_h)
-        is_h_clear = (self.hovered_hub_btn == "clear_notifs")
+        # 2. Bouton tactile Demander / Microphone dans l'en-tête
+        ask_w = 110.0
+        ask_x = rect.left() + 176.0
+        self.btn_manual_ask_rect = QRectF(ask_x, btn_y, ask_w, btn_h)
+        is_h_ask = (self.hovered_action_btn == "ask")
+        if is_h_ask:
+            painter.setPen(QPen(QColor(acc.red(), acc.green(), acc.blue(), 180), 1.0))
+            painter.setBrush(QBrush(QColor(acc.red(), acc.green(), acc.blue(), 50)))
+        else:
+            painter.setPen(QPen(QColor(acc.red(), acc.green(), acc.blue(), 90), 1.0))
+            painter.setBrush(QBrush(QColor(acc.red(), acc.green(), acc.blue(), 22)))
+        painter.drawRoundedRect(self.btn_manual_ask_rect, 12.0, 12.0)
+        draw_vector_microphone(painter, ask_x + 14.0, btn_y + 12.0, QColor(acc if is_h_ask else QColor(255, 255, 255, 230)), scale=0.8)
+        painter.setPen(QColor(acc if is_h_ask else QColor(255, 255, 255, 230)))
+        painter.setFont(QFont("Segoe UI", 7, QFont.Weight.Bold))
+        painter.drawText(QRectF(ask_x + 24.0, btn_y, ask_w - 28.0, btn_h), Qt.AlignmentFlag.AlignCenter, "Demander")
+
+        # 3. Bouton tactile de REPLI / FERMETURE à l'extrémité droite
+        col_w = 26.0
+        col_x = rect.right() - col_w - 14.0
+        self.btn_collapse_rect = QRectF(col_x, btn_y, col_w, btn_h)
+        is_h_col = (self.hovered_action_btn == "collapse")
+        painter.setPen(QPen(QColor(255, 255, 255, 80 if is_h_col else 30), 1.0))
+        painter.setBrush(QBrush(QColor(255, 255, 255, 35 if is_h_col else 15)))
+        painter.drawRoundedRect(self.btn_collapse_rect, 12.0, 12.0)
+        draw_vector_expand_icon(painter, col_x + 13.0, btn_y + 12.0, QColor(255, 255, 255, 240 if is_h_col else 180), scale=0.9, is_expanded=True)
+
+        # 4. Boutons d'actions rapides vectoriels (Screenshot, Bureau, Réglages, Vider notifs)
+        # 4.1 Vider notifs
+        self.btn_clear_notifs_rect = QRectF(col_x - 84.0, btn_y, 78.0, btn_h)
+        is_h_clear = (self.hovered_action_btn == "clear_notifs")
         painter.setPen(QPen(QColor(255, 255, 255, 60 if is_h_clear else 25), 1.0))
         painter.setBrush(QBrush(QColor(255, 255, 255, 30 if is_h_clear else 14)))
         painter.drawRoundedRect(self.btn_clear_notifs_rect, 12.0, 12.0)
+        draw_vector_trash(painter, self.btn_clear_notifs_rect.left() + 14.0, btn_y + 12.0, QColor(255, 255, 255, 220 if is_h_clear else 170), scale=0.8)
         painter.setPen(QColor(255, 255, 255, 220 if is_h_clear else 170))
         font_btn = QFont("Segoe UI", 7, QFont.Weight.Medium)
         painter.setFont(font_btn)
-        painter.drawText(self.btn_clear_notifs_rect, Qt.AlignmentFlag.AlignCenter, "🗑️ Vider notifs")
+        painter.drawText(QRectF(self.btn_clear_notifs_rect.left() + 20.0, btn_y, 54.0, btn_h), Qt.AlignmentFlag.AlignCenter, "Effacer")
 
-        # 2.2 Bouton Réglages
+        # 4.2 Réglages
         self.btn_settings_rect = QRectF(self.btn_clear_notifs_rect.left() - 86.0, btn_y, 80.0, btn_h)
-        is_h_set = (self.hovered_hub_btn == "settings")
+        is_h_set = (self.hovered_action_btn == "settings")
         painter.setPen(QPen(QColor(255, 255, 255, 60 if is_h_set else 25), 1.0))
         painter.setBrush(QBrush(QColor(255, 255, 255, 30 if is_h_set else 14)))
         painter.drawRoundedRect(self.btn_settings_rect, 12.0, 12.0)
+        draw_vector_gear(painter, self.btn_settings_rect.left() + 14.0, btn_y + 12.0, QColor(255, 255, 255, 220 if is_h_set else 170), scale=0.8)
         painter.setPen(QColor(255, 255, 255, 220 if is_h_set else 170))
-        painter.drawText(self.btn_settings_rect, Qt.AlignmentFlag.AlignCenter, "⚙️ Réglages")
+        painter.setFont(font_btn)
+        painter.drawText(QRectF(self.btn_settings_rect.left() + 20.0, btn_y, 56.0, btn_h), Qt.AlignmentFlag.AlignCenter, "Réglages")
 
-        # 2.3 Bouton Afficher Bureau
-        self.btn_desktop_rect = QRectF(self.btn_settings_rect.left() - 82.0, btn_y, 76.0, btn_h)
-        is_h_desk = (self.hovered_hub_btn == "desktop")
+        # 4.3 Afficher Bureau
+        self.btn_desktop_rect = QRectF(self.btn_settings_rect.left() - 78.0, btn_y, 72.0, btn_h)
+        is_h_desk = (self.hovered_action_btn == "desktop")
         painter.setPen(QPen(QColor(255, 255, 255, 60 if is_h_desk else 25), 1.0))
         painter.setBrush(QBrush(QColor(255, 255, 255, 30 if is_h_desk else 14)))
         painter.drawRoundedRect(self.btn_desktop_rect, 12.0, 12.0)
+        draw_vector_monitor(painter, self.btn_desktop_rect.left() + 14.0, btn_y + 12.0, QColor(255, 255, 255, 220 if is_h_desk else 170), scale=0.8)
         painter.setPen(QColor(255, 255, 255, 220 if is_h_desk else 170))
-        painter.drawText(self.btn_desktop_rect, Qt.AlignmentFlag.AlignCenter, "🖥️ Bureau")
+        painter.setFont(font_btn)
+        painter.drawText(QRectF(self.btn_desktop_rect.left() + 20.0, btn_y, 48.0, btn_h), Qt.AlignmentFlag.AlignCenter, "Bureau")
 
-        # 2.4 Bouton Screenshot
-        self.btn_screenshot_rect = QRectF(self.btn_desktop_rect.left() - 132.0, btn_y, 126.0, btn_h)
-        is_h_shot = (self.hovered_hub_btn == "screenshot")
+        # 4.4 Screenshot
+        self.btn_screenshot_rect = QRectF(self.btn_desktop_rect.left() - 86.0, btn_y, 80.0, btn_h)
+        is_h_shot = (self.hovered_action_btn == "screenshot")
         painter.setPen(QPen(QColor(acc.red(), acc.green(), acc.blue(), 180 if is_h_shot else 90), 1.0))
         painter.setBrush(QBrush(QColor(acc.red(), acc.green(), acc.blue(), 45 if is_h_shot else 20)))
         painter.drawRoundedRect(self.btn_screenshot_rect, 12.0, 12.0)
+        draw_vector_camera(painter, self.btn_screenshot_rect.left() + 14.0, btn_y + 12.0, QColor(acc if is_h_shot else QColor(255, 255, 255, 220)), scale=0.8)
         painter.setPen(QColor(acc if is_h_shot else QColor(255, 255, 255, 220)))
         painter.setFont(QFont("Segoe UI", 7, QFont.Weight.Bold))
-        painter.drawText(self.btn_screenshot_rect, Qt.AlignmentFlag.AlignCenter, "📸 Capture d'écran")
+        painter.drawText(QRectF(self.btn_screenshot_rect.left() + 20.0, btn_y, 56.0, btn_h), Qt.AlignmentFlag.AlignCenter, "Capture")
 
         # Ligne séparatrice
         painter.setPen(QPen(QColor(255, 255, 255, 20), 1.0))
         painter.drawLine(QPointF(rect.left() + 18.0, rect.top() + 42.0), QPointF(rect.right() - 18.0, rect.top() + 42.0))
 
-        # 3. Corps principal : Deux Colonnes
+        # 5. Corps principal : Deux Colonnes
         content_top = rect.top() + 48.0
         col1_w = 415.0
         col2_x = rect.left() + col1_w + 14.0
@@ -1351,7 +1656,7 @@ class IslandWindow(QWidget):
                 )
 
                 painter.setPen(Config.COLOR_TEXT_PRIMARY)
-                painter.setFont(QFont("Segoe UI", 7.5, QFont.Weight.Bold))
+                painter.setFont(QFont("Segoe UI", 7, QFont.Weight.Bold))
                 title_s = item.title if item.title else item.app_name
                 if len(title_s) > 24:
                     title_s = title_s[:22] + "..."

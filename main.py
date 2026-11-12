@@ -120,6 +120,7 @@ def main():
 
     # 5. Moteur Push-to-Talk global (Raccourci Windows + Alt)
     ptt_engine = PushToTalkEngine(window_instance=island, mode=user_settings.get("ptt_mode", "hybrid"))
+    island.ptt_engine = ptt_engine
     ptt_engine.start()
     control_center.settings_changed.connect(lambda s: ptt_engine.set_mode(s.get("ptt_mode", "hybrid")))
 

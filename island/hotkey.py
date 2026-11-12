@@ -52,6 +52,25 @@ class PushToTalkEngine:
     def set_mode(self, mode: str):
         self.mode = mode
 
+    def start_manual_recording(self):
+        """Démarre l'enregistrement vocal lors d'un clic manuel sur le bouton Island."""
+        self.request_seq += 1
+        req_id = self.request_seq
+        print(f"[PushToTalkEngine] Requête manuelle #{req_id} amorcée.")
+        self.window.state_change_requested.emit("stop_reading", {})
+        if getattr(self.window, "voice_engine", None):
+            self.window.voice_engine.stop()
+        self.is_active = True
+        self.recorder.start_recording()
+        self.window.state_change_requested.emit("set_state", {"state": "listening"})
+        return req_id
+
+    def stop_manual_recording(self):
+        """Arrête l'enregistrement manuel et passe immédiatement à l'analyse/transcription."""
+        if self.is_active:
+            self.is_active = False
+            self._trigger_thinking_and_capture(self.request_seq)
+
     def _poll_loop(self):
         while self.running:
             time.sleep(0.02)  # 50 Hz : ultra-réactif (20ms) et 0.00% CPU
