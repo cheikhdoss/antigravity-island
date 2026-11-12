@@ -28,10 +28,10 @@ def test_keyboard_prompt_feature():
     win.show()
     app.processEvents()
 
-    assert win.custom_idle_w >= 176.0, f"Largeur idle attendue >= 176, trouvé: {win.custom_idle_w}"
+    assert win.custom_idle_w == 110.0, f"Largeur idle attendue 110, trouvé: {win.custom_idle_w}"
     assert hasattr(win, "prompt_input"), "IslandWindow doit posséder un child widget prompt_input"
     assert not win.prompt_input.isVisible(), "prompt_input doit être masqué en mode idle"
-    print("✓ IslandWindow instancié au repos (idle) avec bouton clavier et prompt_input masqué")
+    print("✓ IslandWindow instancié au repos (idle épuré) avec prompt_input masqué")
 
     # 3. Test du déclenchement trigger_keyboard_ask()
     win.trigger_keyboard_ask()
@@ -89,15 +89,13 @@ def test_keyboard_prompt_feature():
             break
     print(f"✓ Réponse générée et affichée dans l'état : {win.current_state} (message: '{win.message_text[:40]}...')")
 
-    # 7. Test clic sur bouton clavier au repos
-    win.set_state("idle")
+    # 7. Test clic sur bouton clavier au hover (minimized_dock)
+    win.set_state("minimized_dock")
     win.reading_timer.stop()
     app.processEvents()
-    win.cur_w = win.custom_idle_w
-    win.cur_h = win.custom_idle_h
-    # Forcer rendu idle pour positionner btn_keyboard_ask_rect
+    # Forcer rendu minimized_dock pour positionner btn_keyboard_ask_rect
     painter = QPainter(pix)
-    win._draw_idle_content(painter, QRectF(Config.SHADOW_BLUR + 16.0, 0.0, win.cur_w, win.cur_h))
+    win._draw_minimized_dock_content(painter, QRectF(Config.SHADOW_BLUR + 16.0, 0.0, win.target_w, win.target_h))
     painter.end()
 
     assert win.btn_keyboard_ask_rect.isValid() and not win.btn_keyboard_ask_rect.isEmpty()
@@ -114,8 +112,8 @@ def test_keyboard_prompt_feature():
     time.sleep(0.05)
     app.processEvents()
 
-    assert win.current_state == "prompt_input", f"Clic sur l'icône clavier doit ouvrir 'prompt_input', actuel: {win.current_state}"
-    print("✓ Clic sur l'icône de clavier vectorielle sur la pilule déclenche parfaitement la saisie clavier")
+    assert win.current_state == "prompt_input", f"Clic sur l'icône clavier au hover doit ouvrir 'prompt_input', actuel: {win.current_state}"
+    print("✓ Clic sur l'icône de clavier vectorielle au hover déclenche parfaitement la saisie clavier")
 
     win.close()
     print("=== TOUS LES TESTS SONT PASSÉS AVEC SUCCÈS (100% OK) ===")
