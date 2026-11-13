@@ -15,7 +15,7 @@ try:
     import speech_recognition as sr
     _recognizer = sr.Recognizer()
     _recognizer.dynamic_energy_threshold = False
-    _recognizer.energy_threshold = 120  # Seuil abaissé à 120 pour capter les voix faibles et murmures
+    _recognizer.energy_threshold = 300
     HAS_SR = True
 except Exception:
     HAS_SR = False
