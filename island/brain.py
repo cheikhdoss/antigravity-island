@@ -45,7 +45,7 @@ def get_current_vision_provider() -> str:
     return "agnes"
 
 def get_current_provider() -> str:
-    """Lit le fournisseur configuré dans settings.json ('agnes', 'nim', 'agy'). Par défaut: agnes."""
+    """Lit le fournisseur configuré dans settings.json ('agnes', 'nim', 'gemini', 'agy'). Par défaut: agnes."""
     try:
         appdata = os.environ.get("APPDATA", os.path.expanduser("~"))
         settings_path = os.path.join(appdata, "AntigravityIsland", "settings.json")
@@ -56,6 +56,84 @@ def get_current_provider() -> str:
     except Exception:
         pass
     return "agnes"
+
+def get_gemini_api_key() -> str:
+    """Lit la clé API Google Gemini configurée dans settings.json ou l'environnement."""
+    try:
+        appdata = os.environ.get("APPDATA", os.path.expanduser("~"))
+        settings_path = os.path.join(appdata, "AntigravityIsland", "settings.json")
+        if os.path.exists(settings_path):
+            with open(settings_path, "r", encoding="utf-8-sig") as f:
+                data = json.load(f)
+                k = data.get("gemini_api_key", "").strip()
+                if k:
+                    return k
+    except Exception:
+        pass
+    return os.environ.get("GEMINI_API_KEY", "")
+
+def query_gemini_api(prompt: str, image_b64: Optional[str] = None, mime_type: str = "image/jpeg", system_prompt: str = "", on_chunk: Optional[Callable[[str], None]] = None) -> str:
+    """
+    Appelle Google DeepMind Gemini 2.5 Flash / 2.0 Flash directement via l'API REST officielle Google.
+    Latence sub-seconde (<0.9s), support natif texte et vision multimodale.
+    """
+    api_key = get_gemini_api_key()
+    if not api_key:
+        print("[Brain Gemini] Clé API Gemini manquante dans settings.json.")
+        return ""
+
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
+    parts = []
+    if image_b64:
+        raw_b64 = image_b64.split(",", 1)[1] if "," in image_b64 else image_b64
+        parts.append({
+            "inlineData": {
+                "mimeType": mime_type,
+                "data": raw_b64
+            }
+        })
+    parts.append({"text": prompt})
+
+    req_body = {
+        "contents": [
+            {
+                "role": "user",
+                "parts": parts
+            }
+        ],
+        "generationConfig": {
+            "temperature": 0.2,
+            "maxOutputTokens": 350
+        }
+    }
+    if system_prompt:
+        req_body["systemInstruction"] = {
+            "parts": [{"text": system_prompt}]
+        }
+
+    headers = {"Content-Type": "application/json"}
+    try:
+        t0 = time.time()
+        req = urllib.request.Request(url, json.dumps(req_body).encode("utf-8"), headers=headers)
+        with urllib.request.urlopen(req, timeout=12) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            candidates = data.get("candidates", [])
+            if candidates:
+                content_parts = candidates[0].get("content", {}).get("parts", [])
+                text = "".join(p.get("text", "") for p in content_parts).strip()
+                text = re.sub(r'\*+', '', text)
+                text = re.sub(r'```.*?```', '', text, flags=re.DOTALL)
+                text = re.sub(r'`', '', text).strip()
+                print(f"[Brain Gemini 2.5 Flash] Réponse en {time.time() - t0:.2f}s : '{text}'")
+                if on_chunk and text:
+                    try:
+                        on_chunk(text)
+                    except Exception:
+                        pass
+                return text
+    except Exception as e:
+        print(f"[Brain Gemini] Erreur appel Gemini Direct : {e}")
+    return ""
 
 def solve_instant_math(query: str) -> Optional[str]:
     """Résout les opérations mathématiques courantes en 0.001s sans solliciter le LLM."""
@@ -195,8 +273,26 @@ def query_vision_model(prompt: str, on_chunk: Optional[Callable[[str], None]] = 
     except Exception:
         pass
 
-    if v_prov == "agnes":
-        # 1. Agnes AI 3.0 Flash Vision (~1.0s)
+    if v_prov == "gemini_vl":
+        # 1. Google DeepMind Gemini 2.5 Flash Vision (<0.9s - Multimodal Direct)
+        ans = query_gemini_api(prompt, image_b64=data_url, system_prompt=system_prompt, on_chunk=on_chunk)
+        if ans:
+            print(f"[Brain Vision Gemini 2.5 Flash] Réponse en {time.time() - t0:.2f}s : '{ans}'")
+            return ans
+        print("[Brain Vision Gemini] Clé absente ou échec API, bascule rapide sur Agnes AI...")
+
+    elif v_prov == "agy_vl":
+        # 2. Antigravity CLI ACP Vision (Local ~7s)
+        raw_b64 = data_url.split(",", 1)[1] if "," in data_url else data_url
+        daemon = AgyDaemon.get_instance()
+        ans = daemon.ask_vision(prompt, image_b64=raw_b64, timeout=30.0, on_chunk=on_chunk)
+        if ans:
+            print(f"[Brain Vision AGY ACP] Réponse en {time.time() - t0:.2f}s : '{ans}'")
+            return ans
+        print("[Brain Vision AGY ACP] Échec ou timeout, bascule rapide sur Agnes AI...")
+
+    if v_prov in ["agnes", "gemini_vl", "agy_vl"]:
+        # 3. Agnes AI 3.0 Flash Vision (~1.0s - Par défaut et repli ultra-rapide)
         headers = {
             "Authorization": f"Bearer {AGNES_API_KEY}",
             "Content-Type": "application/json"
@@ -226,7 +322,7 @@ def query_vision_model(prompt: str, on_chunk: Optional[Callable[[str], None]] = 
         except Exception as e:
             print(f"[Brain Vision Agnes] Erreur appel API : {e}")
 
-    # 2. NVIDIA Nemotron 3.5 Super-VL 120B
+    # 4. NVIDIA Nemotron 3.5 Super-VL 120B
     headers = {
         "Authorization": f"Bearer {NIM_API_KEY}",
         "Content-Type": "application/json"
@@ -709,7 +805,12 @@ def generate_response(query: str, on_chunk: Optional[Callable[[str], None]] = No
     effective_text_query = f"{conversation_summary}\n\n{effective_query}" if conversation_summary else effective_query
 
     raw_resp = ""
-    if provider == "agnes":
+    if provider == "gemini":
+        raw_resp = query_gemini_api(effective_text_query, system_prompt=system_prompt_with_harness, on_chunk=on_chunk)
+        if not raw_resp:
+            print("[Brain] Repli sur Agnes AI...")
+            raw_resp = query_agnes_ai(effective_query, messages=multi_turn_messages, timeout=12, on_chunk=on_chunk)
+    elif provider == "agnes":
         raw_resp = query_agnes_ai(effective_query, messages=multi_turn_messages, timeout=12, on_chunk=on_chunk)
         if not raw_resp:
             print("[Brain] Repli sur NVIDIA NIM...")

@@ -5,7 +5,7 @@ import winreg
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, 
-    QFrame, QSlider, QComboBox, QSystemTrayIcon, QMenu, QColorDialog, QScrollArea, QCheckBox
+    QFrame, QSlider, QComboBox, QSystemTrayIcon, QMenu, QColorDialog, QScrollArea, QCheckBox, QLineEdit
 )
 from PyQt6.QtGui import QIcon, QColor, QFont, QPixmap, QPainter, QBrush
 
@@ -70,9 +70,10 @@ def load_settings():
         "voice_enabled": False,      # Texte pur sur le Dynamic Island (sans voix)
         "voice_name": "fr-FR-VivienneMultilingualNeural",
         "voice_rate": "+10%",
-        "llm_provider": "agnes",     # "agnes" (Agnes AI 3.0 Flash), "nim" (NVIDIA NIM), "agy" (AGY CLI ACP)
+        "llm_provider": "agnes",     # "agnes" (Agnes AI 3.0 Flash), "gemini", "nim" (NVIDIA NIM), "agy" (AGY CLI ACP)
         "nim_model": "nvidia/nemotron-3.5-bolt-e4b",
-        "vision_provider": "agnes",   # "agnes", "nim_vl", "ocr"
+        "vision_provider": "agnes",   # "agnes", "gemini_vl", "agy_vl", "nim_vl", "ocr"
+        "gemini_api_key": "",         # Clé API Google Gemini pour requêtes directes
         "stt_provider": "antigravity", # "antigravity" (DeepMind Connect-RPC), "google", "offline"
         "autostart": is_autostart_enabled(),
         "screen_index": 0,
@@ -585,13 +586,14 @@ class SettingsWindow(QWidget):
         lbl_ai.setProperty("class", "section")
         layout_ai.addWidget(lbl_ai)
 
-        # Fournisseur LLM (Agnes AI vs NVIDIA NIM vs Antigravity ACP)
+        # Fournisseur LLM (Agnes AI vs Google Gemini vs NVIDIA NIM vs Antigravity ACP)
         row_llm = QHBoxLayout()
         row_llm.addWidget(QLabel("Fournisseur IA (LLM Provider) :"))
         row_llm.addStretch()
         self.combo_llm = QComboBox()
         self.combo_llm.blockSignals(True)
         self.combo_llm.addItem("✨ Agnes AI 3.0 Flash (~0.8s - Par défaut & Vision)", "agnes")
+        self.combo_llm.addItem("💎 Google DeepMind Gemini 2.5 Flash (<0.9s Direct)", "gemini")
         self.combo_llm.addItem("⚡ NVIDIA NIM (5 Modèles Rapides)", "nim")
         self.combo_llm.addItem("🧠 Antigravity CLI / AGY ACP (Local)", "agy")
 
@@ -632,6 +634,8 @@ class SettingsWindow(QWidget):
         self.combo_vision = QComboBox()
         self.combo_vision.blockSignals(True)
         self.combo_vision.addItem("⚡ Agnes AI 3.0 Flash Vision (~1.0s - Recommandé)", "agnes")
+        self.combo_vision.addItem("💎 Google DeepMind Gemini 2.5 Flash Vision (<0.9s)", "gemini_vl")
+        self.combo_vision.addItem("🧠 Antigravity AGY ACP Vision (Local ~7s)", "agy_vl")
         self.combo_vision.addItem("🔬 NVIDIA Nemotron Super-VL 120B (~4.9s - NIM Multimodal)", "nim_vl")
         self.combo_vision.addItem("🔍 WinRT OCR Local (<0.15s - Texte seul)", "ocr")
 
@@ -643,6 +647,17 @@ class SettingsWindow(QWidget):
         self.combo_vision.currentIndexChanged.connect(self._on_vision_provider_changed)
         row_vision.addWidget(self.combo_vision)
         layout_ai.addLayout(row_vision)
+
+        # Clé API Google Gemini (optionnelle pour Gemini Direct)
+        row_gemini_key = QHBoxLayout()
+        row_gemini_key.addWidget(QLabel("Clé Google Gemini (Direct) :"))
+        self.txt_gemini_key = QLineEdit()
+        self.txt_gemini_key.setEchoMode(QLineEdit.EchoMode.Password)
+        self.txt_gemini_key.setPlaceholderText("AIzaSy... (laisser vide si non utilisé)")
+        self.txt_gemini_key.setText(self.settings.get("gemini_api_key", ""))
+        self.txt_gemini_key.textChanged.connect(self._on_gemini_key_changed)
+        row_gemini_key.addWidget(self.txt_gemini_key)
+        layout_ai.addLayout(row_gemini_key)
 
         # Synthèse vocale activée
         row_voice = QHBoxLayout()
@@ -976,6 +991,12 @@ class SettingsWindow(QWidget):
     def _on_vision_provider_changed(self, idx: int):
         v = self.combo_vision.currentData()
         self.settings["vision_provider"] = v
+        save_settings(self.settings)
+        self.settings_changed.emit(self.settings)
+        self._flash_saved()
+
+    def _on_gemini_key_changed(self, text: str):
+        self.settings["gemini_api_key"] = text.strip()
         save_settings(self.settings)
         self.settings_changed.emit(self.settings)
         self._flash_saved()

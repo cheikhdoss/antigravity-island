@@ -22,3 +22,7 @@ dist/
 
 # Logs
 *.log
+
+scratch/
+*.wav
+

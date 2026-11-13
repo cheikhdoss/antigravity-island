@@ -32,7 +32,7 @@ class AudioRecorder:
         self.sample_rate = sample_rate
         self.is_recording = False
         self.frames = []
-        self.pre_buffer = collections.deque(maxlen=7)  # ~220ms d'historique audio continu
+        self.pre_buffer = collections.deque(maxlen=14)  # ~450ms d'historique audio continu pour ne jamais couper le début
         self.pa = None
         self.stream = None
         self.last_rms = 0.0
@@ -154,12 +154,22 @@ class AudioRecorder:
                 self.last_rms = float(np.sqrt(np.mean(audio_data.astype(np.float64)**2)))
                 self.last_peak = int(np.max(np.abs(audio_data)))
 
-                # Préserver l'intégralité du signal naturel (aucun rognage destructif qui coupe les syllabes)
-                # Normalisation acoustique douce SEULEMENT si le volume d'entrée est très faible, sans clipping ni bruit
-                if 50 < self.last_peak < 6000:
-                    gentle_gain = min(1.8, 11000.0 / float(self.last_peak))
-                    clean_audio = np.clip(audio_data.astype(np.float32) * gentle_gain, -32767, 32767).astype(np.int16)
-                    print(f"[AudioRecorder] Normalisation douce : x{gentle_gain:.2f} (Peak {self.last_peak} -> {int(np.max(np.abs(clean_audio)))})")
+                # Boost adaptatif pour voix faible / murmure :
+                # Amène automatiquement la voix à un niveau de confort idéal (~18000 peak) sans distorsion
+                if self.last_peak > 30:
+                    target_peak = 19000.0
+                    gain = min(6.5, max(1.0, target_peak / float(self.last_peak)))
+                    boosted = audio_data.astype(np.float32) * gain
+                    # Soft limiter progressif (courbe tanh au-delà de 26000) pour éviter tout écrêtage
+                    limit_thresh = 26000.0
+                    over = np.abs(boosted) > limit_thresh
+                    if np.any(over):
+                        signs = np.sign(boosted[over])
+                        overshoot = np.abs(boosted[over]) - limit_thresh
+                        boosted[over] = signs * (limit_thresh + 4500.0 * np.tanh(overshoot / 4500.0))
+                    clean_audio = np.clip(boosted, -32767, 32767).astype(np.int16)
+                    if gain > 1.05:
+                        print(f"[AudioRecorder] Voix faible rehaussée : Gain x{gain:.2f} (Peak {self.last_peak} -> {int(np.max(np.abs(clean_audio)))})")
                 else:
                     clean_audio = audio_data
 

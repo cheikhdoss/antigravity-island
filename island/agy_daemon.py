@@ -92,20 +92,17 @@ class AgyDaemon:
             try:
                 mod_id = self._next_id()
                 self._send_request_sync("session/set_config_option", {"sessionId": self.session_id, "configId": "model", "value": "gemini-3.8-flash"}, req_id=mod_id, timeout=5.0)
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"[AgyDaemon] Erreur config modèle : {e}")
 
             try:
                 cfg_id = self._next_id()
                 self._send_request_sync("session/set_config_option", {"sessionId": self.session_id, "configId": "thought_level", "value": "low"}, req_id=cfg_id, timeout=5.0)
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"[AgyDaemon] Erreur config pensée : {e}")
 
             self.is_ready = True
             print("[AgyDaemon] Démon Antigravity ACP opérationnel et prêt !")
-
-            # 4. Pré-chauffage asynchrone
-            threading.Thread(target=self._prewarm, daemon=True).start()
 
         except Exception as e:
             print(f"[AgyDaemon] Erreur lors du démarrage du démon : {e}")
@@ -158,6 +155,7 @@ class AgyDaemon:
         return None
 
     def _read_loop(self):
+        decoder = json.JSONDecoder()
         while self._running and self.process and self.process.stdout:
             try:
                 line = self.process.stdout.readline()
@@ -167,36 +165,50 @@ class AgyDaemon:
                 if not line:
                     continue
 
-                obj = json.loads(line)
-                # 1. Traitement des réponses RPC avec id
-                if "id" in obj:
-                    rid = obj["id"]
-                    if rid in self._pending_requests:
-                        req = self._pending_requests[rid]
-                        if "error" in obj and obj["error"]:
-                            req["error"] = obj["error"]
-                        else:
-                            req["result"] = obj.get("result", {})
-                        req["event"].set()
+                idx = 0
+                while idx < len(line):
+                    while idx < len(line) and line[idx].isspace():
+                        idx += 1
+                    if idx >= len(line):
+                        break
+                    try:
+                        obj, end_idx = decoder.raw_decode(line, idx)
+                        idx = end_idx
+                    except Exception:
+                        break
 
-                # 2. Traitement des notifications de streaming (session/update)
-                elif obj.get("method") == "session/update":
-                    params = obj.get("params", {})
-                    update = params.get("update", {})
-                    session_update = update.get("sessionUpdate")
+                    if isinstance(obj, dict):
+                        # 1. Traitement des réponses RPC avec id
+                        if "id" in obj:
+                            rid = obj["id"]
+                            if rid in self._pending_requests:
+                                req = self._pending_requests[rid]
+                                if "error" in obj and obj["error"]:
+                                    req["error"] = obj["error"]
+                                else:
+                                    req["result"] = obj.get("result", {})
+                                req["event"].set()
 
-                    if session_update == "agent_message_chunk":
-                        content = update.get("content", {})
-                        text = content.get("text", "")
-                        if text and hasattr(self, "_active_chunk_callback") and self._active_chunk_callback:
-                            try:
-                                self._active_chunk_callback(text)
-                            except Exception:
-                                pass
+                        # 2. Traitement des notifications de streaming (session/update)
+                        elif obj.get("method") == "session/update":
+                            params = obj.get("params", {})
+                            update = params.get("update", {})
+                            session_update = update.get("sessionUpdate")
 
-            except Exception as e:
-                if self._running:
-                    print(f"[AgyDaemon] Erreur parsing stdout : {e}")
+                            if session_update == "agent_message_chunk":
+                                content = update.get("content", {})
+                                text = content.get("text", "")
+                                if text and hasattr(self, "_active_chunk_callback") and self._active_chunk_callback:
+                                    try:
+                                        self._active_chunk_callback(text)
+                                    except Exception:
+                                        pass
+                            elif session_update in ("turn_completed", "turn_finished") or update.get("stopReason"):
+                                for req in list(self._pending_requests.values()):
+                                    req["event"].set()
+
+            except Exception:
+                pass
 
         print("[AgyDaemon] Boucle de lecture stdout terminée.")
 
@@ -265,6 +277,93 @@ class AgyDaemon:
 
             if not completed:
                 print(f"[AgyDaemon] Timeout sur session/prompt après {timeout}s")
+                if chunks:
+                    return self._clean_text("".join(chunks))
+                return ""
+
+            raw_text = "".join(chunks).strip()
+            clean_text = self._clean_text(raw_text)
+            return clean_text
+
+    def ask_vision(self, prompt: str, image_b64: str, mime_type: str = "image/jpeg", timeout: float = 30.0, on_chunk: Optional[Callable[[str], None]] = None) -> str:
+        """
+        Envoie une requête multimodale (image + question) au démon ACP persistant Antigravity.
+        Supporte promptCapabilities: image=True.
+        """
+        if not prompt or not prompt.strip():
+            prompt = "Que vois-tu à l'écran ?"
+
+        if not image_b64:
+            return self.ask(prompt, on_chunk=on_chunk, timeout=timeout)
+
+        with self._lock:
+            if not self.is_ready or not self.session_id or not self.process or self.process.poll() is not None:
+                print("[AgyDaemon] Démon inactif pour vision, tentative de redémarrage...")
+                self._start_daemon()
+
+            if not self.is_ready or not self.session_id:
+                return ""
+
+            chunks = []
+
+            def _handle_chunk(txt: str):
+                chunks.append(txt)
+                if on_chunk:
+                    try:
+                        on_chunk(txt)
+                    except Exception:
+                        pass
+
+            self._active_chunk_callback = _handle_chunk
+
+            req_id = self._next_id()
+            evt = threading.Event()
+            container = {"result": None, "error": None, "event": evt}
+            self._pending_requests[req_id] = container
+
+            system_context = (
+                "Consigne: Tu es l'assistant visuel rapide de l'encoche Dynamic Island sur Windows. "
+                "Analyse la capture d'écran fournie et réponds DIRECTEMENT en 1 à 2 phrases concises en français. "
+                "N'utilise aucun outil. Pas d'astérisques markdown ni d'emoji.\n\n"
+                f"Question : {prompt.strip()}"
+            )
+
+            prompt_payload = {
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "method": "session/prompt",
+                "params": {
+                    "sessionId": self.session_id,
+                    "prompt": [
+                        {
+                            "type": "image",
+                            "data": image_b64,
+                            "mimeType": mime_type
+                        },
+                        {
+                            "type": "text",
+                            "text": system_context
+                        }
+                    ]
+                }
+            }
+
+            try:
+                line = json.dumps(prompt_payload, ensure_ascii=False) + "\n"
+                self.process.stdin.write(line)
+                self.process.stdin.flush()
+            except Exception as e:
+                print(f"[AgyDaemon] Erreur d'écriture du prompt vision : {e}")
+                self._pending_requests.pop(req_id, None)
+                self._active_chunk_callback = None
+                return ""
+
+            completed = evt.wait(timeout)
+            self._pending_requests.pop(req_id, None)
+            self._active_chunk_callback = None
+
+            if not completed:
+                print(f"[AgyDaemon Vision] Timeout sur session/prompt après {timeout}s")
                 if chunks:
                     return self._clean_text("".join(chunks))
                 return ""

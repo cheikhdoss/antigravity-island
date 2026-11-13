@@ -649,6 +649,9 @@ class IslandWindow(QWidget):
         else:
             self.thinking_watchdog.stop()
 
+        if state_name != "listening" and hasattr(self, "manual_listen_timer"):
+            self.manual_listen_timer.stop()
+
         if payload:
             if "text" in payload:
                 self.message_text = payload["text"]
@@ -700,9 +703,10 @@ class IslandWindow(QWidget):
             self.target_h = 54.0
             self.target_r = 24.0
         elif state_name == "control_hub":
-            self.target_w = 700.0
-            self.target_h = 280.0
-            self.target_r = 28.0
+            target_cfg = Config.STATES[state_name]
+            self.target_w = float(target_cfg.width)
+            self.target_h = float(target_cfg.height)
+            self.target_r = float(target_cfg.radius)
         elif state_name == "thinking":
             target_cfg = Config.STATES[state_name]
             self.target_w = float(target_cfg.width)
@@ -750,8 +754,8 @@ class IslandWindow(QWidget):
         else:
             self.set_state("listening")
 
-        # Watchdog d'écoute manuelle (7.5s max si l'utilisateur ne clique pas à nouveau)
-        self.manual_listen_timer.start(7500)
+        # Watchdog d'écoute manuelle (14s max si l'utilisateur ne clique pas à nouveau)
+        self.manual_listen_timer.start(14000)
 
     def stop_manual_ask(self):
         """Arrête l'enregistrement manuel et passe à l'analyse de la requête."""
@@ -1122,7 +1126,10 @@ class IslandWindow(QWidget):
                 self.hover_expand_timer.stop()
 
             pad_x = Config.SHADOW_BLUR + 16.0
-            dock_x = pad_x + 76.0  # Marge pour les boutons micro et clavier à gauche
+            if hasattr(self, "btn_meet_rect") and not self.btn_meet_rect.isEmpty():
+                dock_x = self.btn_meet_rect.right() + 12.0
+            else:
+                dock_x = pad_x + 114.0
             cy = self.height() / 2.0
             hovered = -1
             display_wins = self.open_windows[:10]
@@ -1932,10 +1939,41 @@ class IslandWindow(QWidget):
         btn_y = rect.top() + 11.0
         btn_h = 24.0
 
-        # 2. Boutons tactiles IA à GAUCHE (Demander, Écrire, Mode Meet)
+        # 2. Boutons d'action : Placement adaptatif et réactif garanti sans chevauchement (Régression Zéro Collision)
+        gap = 5.0
+        left_bound = rect.left() + 142.0
+
+        # 3. Bouton tactile de REPLI / FERMETURE à l'extrémité droite
+        col_w = 24.0
+        col_x = rect.right() - col_w - 14.0
+        self.btn_collapse_rect = QRectF(col_x, btn_y, col_w, btn_h)
+        is_h_col = (self.hovered_action_btn == "collapse")
+        painter.setPen(QPen(QColor(255, 255, 255, 80 if is_h_col else 30), 1.0))
+        painter.setBrush(QBrush(QColor(255, 255, 255, 35 if is_h_col else 15)))
+        painter.drawRoundedRect(self.btn_collapse_rect, 12.0, 12.0)
+        draw_vector_expand_icon(painter, col_x + 12.0, btn_y + 12.0, QColor(255, 255, 255, 240 if is_h_col else 180), scale=0.9, is_expanded=True)
+
+        right_bound = col_x - 8.0
+        avail = max(100.0, right_bound - left_bound)
+
+        # Largeurs de base optimales
+        ask_w, kb_w, meet_w = 76.0, 66.0, 80.0
+        shot_w, desk_w, set_w, clear_w = 70.0, 64.0, 70.0, 64.0
+
+        base_needed = (ask_w + kb_w + meet_w) + (shot_w + desk_w + set_w + clear_w) + 6 * gap + 16.0
+        scale = min(1.0, avail / base_needed) if avail < base_needed else 1.0
+        if scale < 1.0:
+            ask_w *= scale
+            kb_w *= scale
+            meet_w *= scale
+            shot_w *= scale
+            desk_w *= scale
+            set_w *= scale
+            clear_w *= scale
+            gap = max(3.0, gap * scale)
+
         # 2.1 Demander (Microphone)
-        ask_w = 78.0
-        ask_x = rect.left() + 150.0
+        ask_x = left_bound
         self.btn_manual_ask_rect = QRectF(ask_x, btn_y, ask_w, btn_h)
         is_h_ask = (self.hovered_action_btn == "ask")
         if is_h_ask:
@@ -1951,8 +1989,7 @@ class IslandWindow(QWidget):
         painter.drawText(QRectF(ask_x + 22.0, btn_y, ask_w - 26.0, btn_h), Qt.AlignmentFlag.AlignCenter, "Demander")
 
         # 2.2 Écrire (Clavier)
-        kb_w = 68.0
-        kb_x = ask_x + ask_w + 6.0
+        kb_x = ask_x + ask_w + gap
         self.btn_keyboard_ask_rect = QRectF(kb_x, btn_y, kb_w, btn_h)
         is_h_kb = (self.hovered_action_btn == "keyboard_ask")
         if is_h_kb:
@@ -1968,8 +2005,7 @@ class IslandWindow(QWidget):
         painter.drawText(QRectF(kb_x + 22.0, btn_y, kb_w - 26.0, btn_h), Qt.AlignmentFlag.AlignCenter, "Écrire")
 
         # 2.3 Mode Meet (Assistant de Cours)
-        meet_w = 82.0
-        meet_x = kb_x + kb_w + 6.0
+        meet_x = kb_x + kb_w + gap
         self.btn_meet_hub_rect = QRectF(meet_x, btn_y, meet_w, btn_h)
         is_h_meet_hub = (self.hovered_action_btn == "meet")
         is_m_act = getattr(self, "meet_active", False)
@@ -1989,22 +2025,11 @@ class IslandWindow(QWidget):
         painter.setFont(QFont("Segoe UI", 7, QFont.Weight.Bold))
         painter.drawText(QRectF(meet_x + 22.0, btn_y, meet_w - 26.0, btn_h), Qt.AlignmentFlag.AlignCenter, "Meet ACTIF" if is_m_act else "Mode Meet")
 
-        # 3. Bouton tactile de REPLI / FERMETURE à l'extrémité droite
-        col_w = 24.0
-        col_x = rect.right() - col_w - 14.0
-        self.btn_collapse_rect = QRectF(col_x, btn_y, col_w, btn_h)
-        is_h_col = (self.hovered_action_btn == "collapse")
-        painter.setPen(QPen(QColor(255, 255, 255, 80 if is_h_col else 30), 1.0))
-        painter.setBrush(QBrush(QColor(255, 255, 255, 35 if is_h_col else 15)))
-        painter.drawRoundedRect(self.btn_collapse_rect, 12.0, 12.0)
-        draw_vector_expand_icon(painter, col_x + 12.0, btn_y + 12.0, QColor(255, 255, 255, 240 if is_h_col else 180), scale=0.9, is_expanded=True)
-
-        # 4. Actions rapides vectorielles (alignées proprement de droite à gauche sans chevauchement)
+        # 4. Actions rapides vectorielles à DROITE (alignées de droite à gauche avec garantie absolue Zéro Collision)
         font_btn = QFont("Segoe UI", 7, QFont.Weight.Medium)
 
         # 4.1 Vider notifs
-        clear_w = 66.0
-        clear_x = col_x - clear_w - 6.0
+        clear_x = right_bound - clear_w
         self.btn_clear_notifs_rect = QRectF(clear_x, btn_y, clear_w, btn_h)
         is_h_clear = (self.hovered_action_btn == "clear_notifs")
         painter.setPen(QPen(QColor(255, 255, 255, 60 if is_h_clear else 25), 1.0))
@@ -2016,8 +2041,7 @@ class IslandWindow(QWidget):
         painter.drawText(QRectF(clear_x + 20.0, btn_y, clear_w - 24.0, btn_h), Qt.AlignmentFlag.AlignCenter, "Effacer")
 
         # 4.2 Réglages
-        set_w = 72.0
-        set_x = clear_x - set_w - 6.0
+        set_x = clear_x - gap - set_w
         self.btn_settings_rect = QRectF(set_x, btn_y, set_w, btn_h)
         is_h_set = (self.hovered_action_btn == "settings")
         painter.setPen(QPen(QColor(255, 255, 255, 60 if is_h_set else 25), 1.0))
@@ -2029,8 +2053,7 @@ class IslandWindow(QWidget):
         painter.drawText(QRectF(set_x + 20.0, btn_y, set_w - 24.0, btn_h), Qt.AlignmentFlag.AlignCenter, "Réglages")
 
         # 4.3 Afficher Bureau
-        desk_w = 66.0
-        desk_x = set_x - desk_w - 6.0
+        desk_x = set_x - gap - desk_w
         self.btn_desktop_rect = QRectF(desk_x, btn_y, desk_w, btn_h)
         is_h_desk = (self.hovered_action_btn == "desktop")
         painter.setPen(QPen(QColor(255, 255, 255, 60 if is_h_desk else 25), 1.0))
@@ -2041,9 +2064,9 @@ class IslandWindow(QWidget):
         painter.setFont(font_btn)
         painter.drawText(QRectF(desk_x + 20.0, btn_y, desk_w - 24.0, btn_h), Qt.AlignmentFlag.AlignCenter, "Bureau")
 
-        # 4.4 Screenshot
-        shot_w = 72.0
-        shot_x = desk_x - shot_w - 6.0
+        # 4.4 Screenshot (garantie inviolable : aucune possibilité de chevauchement avec Mode Meet)
+        min_shot_x = meet_x + meet_w + gap + 8.0
+        shot_x = max(min_shot_x, desk_x - gap - shot_w)
         self.btn_screenshot_rect = QRectF(shot_x, btn_y, shot_w, btn_h)
         is_h_shot = (self.hovered_action_btn == "screenshot")
         painter.setPen(QPen(QColor(acc.red(), acc.green(), acc.blue(), 180 if is_h_shot else 90), 1.0))
@@ -2060,7 +2083,7 @@ class IslandWindow(QWidget):
 
         # 5. Corps principal : Deux Colonnes
         content_top = rect.top() + 48.0
-        col1_w = 445.0
+        col1_w = 455.0
         col2_x = rect.left() + col1_w + 16.0
         col2_w = rect.right() - col2_x - 18.0
 
