@@ -11,6 +11,7 @@ import io
 from typing import Optional, Callable, List, Dict
 from island.agy_daemon import AgyDaemon
 from island.desktop_control import DesktopController
+from island.agy_knowledge import AgyKnowledge
 
 NIM_API_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
 NIM_API_KEY = "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"
@@ -72,6 +73,14 @@ def get_gemini_api_key() -> str:
         pass
     return os.environ.get("GEMINI_API_KEY", "")
 
+def get_unified_system_prompt(is_vision: bool = False) -> str:
+    """Génère le prompt d'intelligence, savoir et compétences unifié pour TOUS les modèles (NVIDIA NIM, Agnes, Gemini, AGY)."""
+    base_prompt = AgyKnowledge.build_system_prompt(is_vision=is_vision)
+    runtime_ctx = AgyKnowledge.get_runtime_context()
+    return f"{base_prompt}\n\n{runtime_ctx}"
+
+COMPUTER_USE_SYSTEM_PROMPT = AgyKnowledge.build_system_prompt(is_vision=False)
+
 def query_gemini_api(prompt: str, image_b64: Optional[str] = None, mime_type: str = "image/jpeg", system_prompt: str = "", on_chunk: Optional[Callable[[str], None]] = None) -> str:
     """
     Appelle Google DeepMind Gemini 2.5 Flash / 2.0 Flash directement via l'API REST officielle Google.
@@ -106,10 +115,10 @@ def query_gemini_api(prompt: str, image_b64: Optional[str] = None, mime_type: st
             "maxOutputTokens": 350
         }
     }
-    if system_prompt:
-        req_body["systemInstruction"] = {
-            "parts": [{"text": system_prompt}]
-        }
+    sys_instruction = system_prompt if system_prompt else get_unified_system_prompt(is_vision=bool(image_b64))
+    req_body["systemInstruction"] = {
+        "parts": [{"text": sys_instruction}]
+    }
 
     headers = {"Content-Type": "application/json"}
     try:
@@ -256,11 +265,7 @@ def query_vision_model(prompt: str, on_chunk: Optional[Callable[[str], None]] = 
     if not data_url:
         return "Impossible de capturer l'écran pour l'analyse visuelle."
 
-    system_prompt = (
-        "Tu es Antigravity Island, un assistant d'analyse visuelle ultra-rapide et précis sur Windows. "
-        "L'utilisateur te demande d'analyser son écran (diagramme, schéma, interface, code, document, page web). "
-        "Donne une réponse claire, directe et naturelle en français en 1 à 2 phrases percutantes, sans bavardage superflu."
-    )
+    system_prompt = get_unified_system_prompt(is_vision=True)
 
     # Récupération de l'historique conversationnel récent DeepTalk pour contexte multi-tours
     prev_turns = []
@@ -367,38 +372,7 @@ def query_vision_model(prompt: str, on_chunk: Optional[Callable[[str], None]] = 
 
     return "J'ai observé votre écran, aucun détail particulier n'a pu être extrait."
 
-COMPUTER_USE_SYSTEM_PROMPT = (
-    "Tu es Antigravity Island, un agent autonome d'élite de contrôle total du bureau Windows (fusion de HeyClicky et Vercel Agent-Desktop).\n"
-    "Tu as un contrôle direct et entier sur la machine de l'utilisateur.\n\n"
-    "RÈGLES D'ACTION :\n"
-    "1. Si la demande de l'utilisateur implique d'agir sur l'ordinateur (ouvrir/fermer des applications, cliquer sur un bouton ou du texte, taper au clavier, naviguer sur le web, vider la corbeille, régler le volume, manipuler des fichiers, faire une capture d'écran, fermer des messages d'erreur, etc.), tu DOIS répondre STRICTEMENT avec un bloc JSON d'action :\n"
-    "```json\n"
-    "{\n"
-    '  "action": "open_app | close_app | minimize_app | point_at | click | type_text | edit_text | scroll | search_in_page | press_hotkey | empty_recycle_bin | set_volume | media_control | create_file | browse_web | take_screenshot | run_powershell",\n'
-    '  "params": { ... },\n'
-    '  "say": "Courte confirmation en français pour la Dynamic Island (ex: \'Bloc-notes ouvert\', \'Corbeille vidée\')"\n'
-    "}\n"
-    "```\n\n"
-    "Détails des paramètres :\n"
-    "- open_app: {\"name\": \"corbeille\" | \"bloc-notes\" | \"brave\" | \"explorateur\" | \"calculatrice\" | \"paramètres\" | \"nom_app\"}\n"
-    "- close_app: {\"name\": \"active\" pour la fenêtre/boîte de dialogue active, ou \"nom_app\" (ex: \"bloc-notes\")}\n"
-    "- minimize_app: {\"name\": \"active\"}\n"
-    "- point_at: {\"target\": \"explorateur de fichiers\" | \"icône\" | \"nom de l'élément à montrer avec le pointeur HeyClicky\"}\n"
-    "- click: {\"target\": \"texte du bouton ou icône (ex: OK, Annuler)\", \"button\": \"left\"|\"right\", \"double\": false}\n"
-    "- type_text: {\"text\": \"texte à saisir\", \"press_enter\": false}\n"
-    "- edit_text: {\"command\": \"undo\" | \"redo\" | \"delete_all\" | \"delete_word\" | \"delete_line\" | \"newline\" | \"replace\", \"new_text\": \"...\"}\n"
-    "- scroll: {\"direction\": \"down\" | \"up\" | \"top\" | \"bottom\", \"amount\": 6}\n"
-    "- search_in_page: {\"query\": \"mot recherché\"}\n"
-    "- press_hotkey: {\"keys\": \"enter\"|\"escape\"|\"ctrl+s\"|\"ctrl+c\"|\"ctrl+v\"|\"ctrl+a\"|\"ctrl+t\"|\"ctrl+w\"|\"alt+f4\"|\"win+d\"}\n"
-    "- empty_recycle_bin: {}\n"
-    "- set_volume: {\"level\": 0-100}\n"
-    "- media_control: {\"command\": \"play_pause\"|\"next\"|\"prev\"}\n"
-    "- create_file: {\"filename\": \"nom.txt\", \"content\": \"texte\", \"folder\": \"desktop\"}\n"
-    "- browse_web: {\"query\": \"recherche\", \"site\": \"youtube\"|\"google\"|\"github\"}\n"
-    "- take_screenshot: {}\n"
-    "- run_powershell: {\"command\": \"code powershell\"}\n\n"
-    "2. Si la demande est une simple question d'information, salutation ou explication (ex: 'c\'est quoi un CRM', 'quelle heure est-il', 'bonjour'), réponds DIRECTEMENT en texte clair, naturel et concis (1 à 2 phrases) SANS JSON."
-)
+
 
 def parse_agent_action(llm_output: str) -> Optional[dict]:
     """Parse un bloc d'action JSON retourné par le LLM (Computer Use Agent)."""
@@ -434,7 +408,7 @@ def query_agnes_ai(user_query: str, messages: Optional[List[dict]] = None, timeo
     }
 
     payload_messages = messages if messages else [
-        {"role": "system", "content": COMPUTER_USE_SYSTEM_PROMPT},
+        {"role": "system", "content": get_unified_system_prompt(is_vision=False)},
         {"role": "user", "content": user_query}
     ]
 
@@ -496,7 +470,7 @@ def query_nvidia_nim(user_query: str, messages: Optional[List[dict]] = None, mod
     selected_model = model_name or get_current_nim_model()
 
     payload_messages = messages if messages else [
-        {"role": "system", "content": COMPUTER_USE_SYSTEM_PROMPT},
+        {"role": "system", "content": get_unified_system_prompt(is_vision=False)},
         {"role": "user", "content": user_query}
     ]
 
@@ -782,9 +756,10 @@ def generate_response(query: str, on_chunk: Optional[Callable[[str], None]] = No
 
     effective_query = f"{harness_context}\n\n{query}" if harness_context else query
 
-    # Préparation du contexte multi-tours DeepTalk
+    # Préparation du contexte multi-tours DeepTalk avec Savoir, Compétences et Contexte Temps Réel
     multi_turn_messages = None
-    system_prompt_with_harness = f"{COMPUTER_USE_SYSTEM_PROMPT}\n\n{harness_context}" if harness_context else COMPUTER_USE_SYSTEM_PROMPT
+    unified_prompt = get_unified_system_prompt(is_vision=False)
+    system_prompt_with_harness = f"{unified_prompt}\n\n{harness_context}" if harness_context else unified_prompt
     try:
         from island.deeptalk import DeepTalk
         multi_turn_messages = DeepTalk.get_instance().get_messages_for_llm(
