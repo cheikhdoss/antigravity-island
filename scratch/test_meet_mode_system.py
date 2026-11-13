@@ -57,7 +57,10 @@ def test_meet_system():
     # 5. Test de synchronisation avec SettingsWindow
     settings_win = SettingsWindow(island_window=island)
     assert hasattr(settings_win, "check_meet_mode"), "SettingsWindow doit avoir check_meet_mode"
+    assert hasattr(settings_win, "combo_meet_src"), "SettingsWindow doit avoir combo_meet_src"
     
+    settings_win.check_meet_mode.setChecked(False)
+    app.processEvents()
     settings_win.check_meet_mode.setChecked(True)
     app.processEvents()
     assert island.meet_active is True

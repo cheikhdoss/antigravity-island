@@ -482,6 +482,10 @@ class IslandWindow(QWidget):
         if "hide_on_screen_share" in settings:
             self.hide_on_screen_share = bool(settings["hide_on_screen_share"])
             self.apply_stealth_mode(self.hide_on_screen_share)
+        if "meet_audio_source" in settings:
+            self.meet_audio_source = settings["meet_audio_source"]
+            if hasattr(self, "meet_listener") and self.meet_listener:
+                self.meet_listener.set_audio_source(self.meet_audio_source)
         if "meet_mode_enabled" in settings:
             self.set_meet_mode(bool(settings["meet_mode_enabled"]))
 

@@ -115,8 +115,9 @@ class MeetListener(QObject):
     speech_transcribed = pyqtSignal(str, bool)  # text, is_question
     rms_updated = pyqtSignal(float)
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, audio_source: str = "loopback"):
         super().__init__(parent)
+        self.audio_source = audio_source  # "loopback" (Haut-parleurs WASAPI seuls), "hybrid", "mic"
         self.is_running = False
         self._thread: Optional[threading.Thread] = None
         self._stop_event = threading.Event()
@@ -132,6 +133,18 @@ class MeetListener(QObject):
         self.loop_queue = queue.Queue(maxsize=150)
         self.loop_channels = 2
         self.loop_rate = 48000
+
+    def set_audio_source(self, source: str):
+        """Configure la source audio : 'loopback' (Haut-parleurs seuls), 'hybrid' (les deux) ou 'mic'."""
+        if source not in ["loopback", "hybrid", "mic"]:
+            source = "loopback"
+        if self.audio_source != source:
+            self.audio_source = source
+            print(f"[MeetListener] Source audio configurée sur : {source}")
+            if self.is_running:
+                # Redémarre proprement avec la nouvelle source
+                self.stop()
+                self.start()
 
     def toggle(self) -> bool:
         if self.is_running:
@@ -153,7 +166,12 @@ class MeetListener(QObject):
         self._thread = threading.Thread(target=self._run_dual_audio_loop, daemon=True)
         self._thread.start()
         self.status_changed.emit(True)
-        print("[MeetListener] Mode Meet ACTIVÉ : écoute continue hybride (Haut-parleurs Loopback + Microphone).")
+        if self.audio_source == "loopback":
+            print("[MeetListener] Mode Meet ACTIVÉ : écoute continue WASAPI Loopback (Haut-parleurs seuls).")
+        elif self.audio_source == "hybrid":
+            print("[MeetListener] Mode Meet ACTIVÉ : écoute continue hybride (Haut-parleurs + Microphone).")
+        else:
+            print(f"[MeetListener] Mode Meet ACTIVÉ : écoute continue ({self.audio_source}).")
 
     def stop(self):
         if not self.is_running:
@@ -206,60 +224,62 @@ class MeetListener(QObject):
             pa = pyaudio.PyAudio()
 
             # 1. Configuration du flux Loopback (Haut-parleurs)
-            loop_device = None
-            try:
-                wasapi_info = pa.get_host_api_info_by_type(pyaudio.paWASAPI)
-                default_speakers = pa.get_device_info_by_index(wasapi_info['defaultOutputDevice'])
-                if default_speakers.get('isLoopbackDevice', False):
-                    loop_device = default_speakers
-                else:
-                    for l in pa.get_loopback_device_info_generator():
-                        if default_speakers['name'] in l['name']:
+            if self.audio_source in ["loopback", "hybrid"]:
+                loop_device = None
+                try:
+                    wasapi_info = pa.get_host_api_info_by_type(pyaudio.paWASAPI)
+                    default_speakers = pa.get_device_info_by_index(wasapi_info['defaultOutputDevice'])
+                    if default_speakers.get('isLoopbackDevice', False):
+                        loop_device = default_speakers
+                    else:
+                        for l in pa.get_loopback_device_info_generator():
+                            if default_speakers['name'] in l['name']:
+                                loop_device = l
+                                break
+                    if not loop_device:
+                        for l in pa.get_loopback_device_info_generator():
                             loop_device = l
                             break
-                if not loop_device:
-                    for l in pa.get_loopback_device_info_generator():
-                        loop_device = l
-                        break
-            except Exception as e_dev:
-                print("[MeetListener] Détection loopback:", e_dev)
+                except Exception as e_dev:
+                    print("[MeetListener] Détection loopback:", e_dev)
 
-            if loop_device:
-                self.loop_rate = int(loop_device['defaultSampleRate'])
-                self.loop_channels = int(loop_device['maxInputChannels'])
+                if loop_device:
+                    self.loop_rate = int(loop_device['defaultSampleRate'])
+                    self.loop_channels = int(loop_device['maxInputChannels'])
+                    try:
+                        stream_loop = pa.open(
+                            format=pyaudio.paInt16,
+                            channels=self.loop_channels,
+                            rate=self.loop_rate,
+                            frames_per_buffer=1024,
+                            input=True,
+                            input_device_index=loop_device['index'],
+                            stream_callback=self._loop_stream_callback
+                        )
+                        stream_loop.start_stream()
+                        print(f"[MeetListener] Canal Loopback actif : {loop_device['name']} ({self.loop_rate}Hz, {self.loop_channels}ch)")
+                    except Exception as e_s:
+                        print("[MeetListener] Impossible d'ouvrir le flux Loopback :", e_s)
+                        stream_loop = None
+
+            # 2. Configuration du flux Microphone (uniquement si activé)
+            if self.audio_source in ["hybrid", "mic"]:
                 try:
-                    stream_loop = pa.open(
+                    mic_device = pa.get_default_input_device_info()
+                    stream_mic = pa.open(
                         format=pyaudio.paInt16,
-                        channels=self.loop_channels,
-                        rate=self.loop_rate,
+                        channels=1,
+                        rate=16000,
                         frames_per_buffer=1024,
                         input=True,
-                        input_device_index=loop_device['index'],
-                        stream_callback=self._loop_stream_callback
+                        input_device_index=mic_device['index'],
+                        stream_callback=self._mic_stream_callback
                     )
-                    stream_loop.start_stream()
-                    print(f"[MeetListener] Canal Loopback actif : {loop_device['name']} ({self.loop_rate}Hz, {self.loop_channels}ch)")
-                except Exception as e_s:
-                    print("[MeetListener] Impossible d'ouvrir le flux Loopback :", e_s)
-                    stream_loop = None
-
-            # 2. Configuration du flux Microphone
-            try:
-                mic_device = pa.get_default_input_device_info()
-                stream_mic = pa.open(
-                    format=pyaudio.paInt16,
-                    channels=1,
-                    rate=16000,
-                    frames_per_buffer=1024,
-                    input=True,
-                    input_device_index=mic_device['index'],
-                    stream_callback=self._mic_stream_callback
-                )
-                stream_mic.start_stream()
-                print(f"[MeetListener] Canal Microphone actif : {mic_device['name']} (16000Hz, mono)")
-            except Exception as e_m:
-                print("[MeetListener] Impossible d'ouvrir le flux Microphone :", e_m)
-                stream_mic = None
+                    stream_mic.start_stream()
+                    print(f"[MeetListener] Canal Microphone actif : {mic_device['name']} (16000Hz, mono)")
+                except Exception as e_m:
+                    print("[MeetListener] Impossible d'ouvrir le flux Microphone :", e_m)
+                    stream_mic = None
 
             if not stream_loop and not stream_mic:
                 print("[MeetListener] Aucun canal audio disponible. Arrêt.")

@@ -78,6 +78,7 @@ def load_settings():
         "screen_index": 0,
         "hide_on_screen_share": True,  # Mode furtif WDA pour visioconférences (Google Meet, Zoom, Teams)
         "meet_mode_enabled": False,    # Assistant de cours en direct (WASAPI Loopback)
+        "meet_audio_source": "loopback", # "loopback" (Haut-parleurs WASAPI seuls) ou "hybrid" (Micro + HP)
     }
     settings_path = get_settings_file_path()
     if os.path.exists(settings_path):
@@ -779,6 +780,19 @@ class SettingsWindow(QWidget):
         row_meet.addWidget(self.check_meet_mode)
         layout_privacy.addLayout(row_meet)
 
+        # Canal audio Meet (Loopback vs Hybride)
+        row_meet_src = QHBoxLayout()
+        row_meet_src.addWidget(QLabel("Canal d'écoute Meet :"))
+        row_meet_src.addStretch()
+        self.combo_meet_src = QComboBox()
+        self.combo_meet_src.addItem("Haut-parleurs seuls (WASAPI Loopback - 100% Prof)", "loopback")
+        self.combo_meet_src.addItem("Hybride (Haut-parleurs + Microphone)", "hybrid")
+        curr_src = self.settings.get("meet_audio_source", "loopback")
+        self.combo_meet_src.setCurrentIndex(1 if curr_src == "hybrid" else 0)
+        self.combo_meet_src.currentIndexChanged.connect(self._on_meet_source_changed)
+        row_meet_src.addWidget(self.combo_meet_src)
+        layout_privacy.addLayout(row_meet_src)
+
         content_layout.addWidget(card_privacy)
 
         # CARTE 7 : Système & Démarrage Automatique
@@ -1020,6 +1034,15 @@ class SettingsWindow(QWidget):
             ctypes.windll.user32.SetWindowDisplayAffinity(ctypes.c_void_p(hwnd), ctypes.c_uint32(affinity))
         except Exception:
             pass
+        self._flash_saved()
+
+    def _on_meet_source_changed(self, index: int):
+        src = self.combo_meet_src.currentData() or "loopback"
+        self.settings["meet_audio_source"] = src
+        save_settings(self.settings)
+        self.settings_changed.emit(self.settings)
+        if getattr(self, "island_window", None):
+            self.island_window.apply_settings(self.settings)
         self._flash_saved()
 
     def _on_meet_mode_toggled(self, checked: bool):
