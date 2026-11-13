@@ -14,10 +14,10 @@ except Exception:
     HAS_PYCAW = False
 
 try:
-    import sounddevice as sd
-    HAS_SD = True
+    import pyaudiowpatch as pyaudio
+    HAS_PA = True
 except Exception:
-    HAS_SD = False
+    HAS_PA = False
 
 class AudioRecorder:
     """
@@ -33,6 +33,7 @@ class AudioRecorder:
         self.is_recording = False
         self.frames = []
         self.pre_buffer = collections.deque(maxlen=7)  # ~220ms d'historique audio continu
+        self.pa = None
         self.stream = None
         self.last_rms = 0.0
         self.last_peak = 0
@@ -44,46 +45,34 @@ class AudioRecorder:
 
         self._init_stream()
 
-    def _ensure_mic_unmuted_quick(self):
-        """Vérification rapide du volume micro sans bloquer le thread principal ni forcer la saturation."""
-        if not HAS_PYCAW:
-            return
-        try:
-            mic = AudioUtilities.GetMicrophone()
-            if mic:
-                ep = mic.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
-                vol = ctypes.cast(ep, ctypes.POINTER(IAudioEndpointVolume))
-                if vol.GetMute():
-                    vol.SetMute(0, None)
-                cur_lvl = vol.GetMasterVolumeLevelScalar()
-                # Uniquement si le micro est anormalement bas (< 30%)
-                if cur_lvl < 0.30:
-                    vol.SetMasterVolumeLevelScalar(0.75, None)
-        except Exception:
-            pass
-
-    def _audio_callback(self, indata, frames_count, time_info, status):
-        data = indata.copy()
+    def _audio_callback(self, in_data, frame_count, time_info, status):
+        data = np.frombuffer(in_data, dtype=np.int16)
         if self.is_recording:
             self.frames.append(data)
         else:
             self.pre_buffer.append(data)
+        return (None, pyaudio.paContinue)
 
     def _init_stream(self):
         """Initialise le flux continu en arrière-plan."""
-        if not HAS_SD:
+        if not HAS_PA:
             self.using_fallback = True
             return
 
         try:
-            self._ensure_mic_unmuted_quick()
-            self.stream = sd.InputStream(
-                samplerate=self.sample_rate,
+            if not self.pa:
+                self.pa = pyaudio.PyAudio()
+            default_mic = self.pa.get_default_input_device_info()
+            self.stream = self.pa.open(
+                format=pyaudio.paInt16,
                 channels=1,
-                dtype='int16',
-                callback=self._audio_callback
+                rate=self.sample_rate,
+                input=True,
+                input_device_index=default_mic["index"],
+                frames_per_buffer=1024,
+                stream_callback=self._audio_callback
             )
-            self.stream.start()
+            self.stream.start_stream()
             self.using_fallback = False
             print("[AudioRecorder] Flux audio WASAPI warm-stream actif (latence démarrage = 0ms).")
         except Exception as e:
@@ -99,16 +88,16 @@ class AudioRecorder:
         self.last_rms = 0.0
         self.last_peak = 0
 
-        if not self.using_fallback and self.stream and self.stream.active:
+        if not self.using_fallback and self.stream and self.stream.is_active():
             # Récupère le pre-buffer pour ne pas couper le début du premier mot
             self.frames = list(self.pre_buffer)
             self.is_recording = True
             return
 
         # Si le stream s'était arrêté, relancer
-        if HAS_SD:
+        if HAS_PA:
             self._init_stream()
-            if self.stream and self.stream.active:
+            if self.stream and self.stream.is_active():
                 self.frames = list(self.pre_buffer)
                 self.is_recording = True
                 return

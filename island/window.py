@@ -110,6 +110,25 @@ def draw_vector_expand_icon(painter: QPainter, cx: float, cy: float, color: QCol
         painter.drawPath(path)
     painter.restore()
 
+def draw_vector_video_meet(painter: QPainter, cx: float, cy: float, color: QColor, scale: float = 1.0):
+    painter.save()
+    s = scale
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+    pen = QPen(color, 1.2 * s, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
+    painter.setPen(pen)
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    # Corps caméra Meet
+    painter.drawRoundedRect(QRectF(cx - 7.0 * s, cy - 4.5 * s, 8.5 * s, 9.0 * s), 2.0 * s, 2.0 * s)
+    # Objectif trapézoïdal
+    path = QPainterPath()
+    path.moveTo(cx + 2.5 * s, cy - 2.5 * s)
+    path.lineTo(cx + 7.5 * s, cy - 5.0 * s)
+    path.lineTo(cx + 7.5 * s, cy + 5.0 * s)
+    path.lineTo(cx + 2.5 * s, cy + 2.5 * s)
+    path.closeSubpath()
+    painter.drawPath(path)
+    painter.restore()
+
 def draw_vector_camera(painter: QPainter, cx: float, cy: float, color: QColor, scale: float = 1.0):
     painter.save()
     s = scale
@@ -287,6 +306,8 @@ class IslandWindow(QWidget):
         # Boutons d'interaction explicite & vectoriels
         self.btn_manual_ask_rect = QRectF()
         self.btn_keyboard_ask_rect = QRectF()
+        self.btn_meet_rect = QRectF()
+        self.btn_meet_hub_rect = QRectF()
         self.btn_expand_rect = QRectF()
         self.btn_collapse_rect = QRectF()
         self.btn_prompt_send_rect = QRectF()
@@ -295,6 +316,12 @@ class IslandWindow(QWidget):
         self.ptt_engine = None
         self.hide_on_screen_share = True
         self.stealth_active = False
+        self.meet_active = False
+
+        from island.meet_listener import MeetListener
+        self.meet_listener = MeetListener(self)
+        self.meet_listener.question_detected.connect(self._on_meet_question_detected)
+        self.meet_listener.status_changed.connect(self._on_meet_status_changed)
 
         # Champ de saisie prompt clavier (Obsidian Glass)
         self.prompt_input = PromptLineEdit(self, on_escape=self._on_prompt_escape)
@@ -455,6 +482,8 @@ class IslandWindow(QWidget):
         if "hide_on_screen_share" in settings:
             self.hide_on_screen_share = bool(settings["hide_on_screen_share"])
             self.apply_stealth_mode(self.hide_on_screen_share)
+        if "meet_mode_enabled" in settings:
+            self.set_meet_mode(bool(settings["meet_mode_enabled"]))
 
         if self.current_state == "idle":
             self.cur_w = self.custom_idle_w
@@ -506,6 +535,76 @@ class IslandWindow(QWidget):
             print("[Stealth] Erreur SetWindowDisplayAffinity:", e)
             return False
 
+    def toggle_meet_mode(self) -> bool:
+        """Bascule le Mode Meet (Assistant de Cours) On/Off."""
+        return self.set_meet_mode(not self.meet_active)
+
+    def set_meet_mode(self, enable: bool) -> bool:
+        """Active ou désactive l'écouteur de cours Meet."""
+        self.meet_active = enable
+        if hasattr(self, "meet_listener") and self.meet_listener:
+            if enable and not self.meet_listener.is_running:
+                self.meet_listener.start()
+            elif not enable and self.meet_listener.is_running:
+                self.meet_listener.stop()
+        if hasattr(self, "settings_window") and self.settings_window:
+            if hasattr(self.settings_window, "check_meet_mode"):
+                self.settings_window.check_meet_mode.blockSignals(True)
+                self.settings_window.check_meet_mode.setChecked(enable)
+                self.settings_window.check_meet_mode.blockSignals(False)
+        print(f"[Island] Mode Meet {'ACTIVÉ' if self.meet_active else 'DÉSACTIVÉ'}")
+        self.update()
+        return self.meet_active
+
+    def _on_meet_status_changed(self, active: bool):
+        self.meet_active = active
+        self.update()
+
+    def _on_meet_question_detected(self, question_text: str):
+        """
+        Déclenché lorsqu'une question du professeur est détectée dans le flux Meet.
+        Capture l'écran immédiatement (pour voir la slide projetée), analyse la question
+        avec le modèle de vision cloud et affiche la réponse sur l'Island.
+        """
+        print(f"[Island Meet] Déclenchement de l'analyse pour : « {question_text} »")
+        self.set_state("thinking", {"title": f"🎓 Question : {question_text[:30]}..."})
+
+        def worker():
+            from island.brain import capture_screen_base64, query_vision_model, generate_response
+            b64_screen = capture_screen_base64()
+            prompt = (
+                f"[COURS / RÉUNION MEET EN DIRECT]\n"
+                f"Le professeur vient de poser cette question à l'oral :\n"
+                f"« {question_text} »\n\n"
+                f"CONSIGNES :\n"
+                f"1. Examine attentivement l'écran partagé par le professeur (slides de cours, présentation, schéma, QCM, code source).\n"
+                f"2. Si la réponse découle des slides ou du document affiché à l'écran, utilise ce contexte exact.\n"
+                f"3. Si l'écran ne montre pas de slide pertinente ou n'a pas de rapport, réponds directement à la question avec des connaissances académiques solides.\n"
+                f"4. Fournis une réponse claire, directe et concise (2 à 4 phrases maximum), directement utilisable par l'étudiant pour répondre au professeur."
+            )
+            try:
+                ans = None
+                if b64_screen:
+                    ans = query_vision_model(prompt, b64_screen)
+                if not ans:
+                    ans = generate_response(prompt)
+                if not ans:
+                    ans = "Impossible de déterminer la réponse automatiquement."
+
+                print(f"[Island Meet] Réponse générée : {ans[:100]}...")
+                from PyQt6.QtCore import QTimer
+                QTimer.singleShot(0, lambda: self.set_state("speaking", {
+                    "text": ans,
+                    "title": f"💡 Réponse : {question_text[:28]}..."
+                }))
+            except Exception as e:
+                print("[Island Meet] Erreur traitement réponse :", e)
+                from PyQt6.QtCore import QTimer
+                QTimer.singleShot(0, lambda: self.set_state("idle"))
+
+        import threading
+        threading.Thread(target=worker, daemon=True).start()
+
     def set_state(self, state_name: str, payload: dict = None):
         if state_name not in Config.STATES:
             return
@@ -520,7 +619,10 @@ class IslandWindow(QWidget):
             if hasattr(self, "prompt_input") and self.prompt_input.isVisible():
                 self.prompt_input.hide()
         
-        if state_name in ["idle", "listening", "thinking"]:
+        if state_name in ["idle", "listening"]:
+            self.action_title = ""
+            self.action_detail = ""
+        elif state_name == "thinking" and (not payload or "title" not in payload):
             self.action_title = ""
             self.action_detail = ""
         if state_name in ["listening", "thinking"]:
@@ -533,9 +635,9 @@ class IslandWindow(QWidget):
         if payload:
             if "text" in payload:
                 self.message_text = payload["text"]
-            if "title" in payload and state_name not in ["thinking", "listening", "idle"]:
+            if "title" in payload and state_name not in ["listening", "idle"]:
                 self.action_title = payload["title"]
-            if "detail" in payload and state_name not in ["thinking", "listening", "idle"]:
+            if "detail" in payload and state_name not in ["listening", "idle"]:
                 self.action_detail = payload["detail"]
             if "progress" in payload:
                 self.progress_value = float(payload["progress"])
@@ -551,6 +653,8 @@ class IslandWindow(QWidget):
             self.target_r = float(self.custom_idle_h / 2.0)
             self.btn_manual_ask_rect = QRectF()
             self.btn_keyboard_ask_rect = QRectF()
+            self.btn_meet_rect = QRectF()
+            self.btn_meet_hub_rect = QRectF()
             self.btn_expand_rect = QRectF()
         elif state_name == "speaking":
             target_cfg = Config.STATES[state_name]
@@ -947,6 +1051,8 @@ class IslandWindow(QWidget):
             self.hovered_action_btn = "ask"
         elif self.btn_keyboard_ask_rect.contains(pos):
             self.hovered_action_btn = "keyboard_ask"
+        elif self.btn_meet_rect.contains(pos) or self.btn_meet_hub_rect.contains(pos):
+            self.hovered_action_btn = "meet"
         elif self.btn_expand_rect.contains(pos):
             self.hovered_action_btn = "expand"
         elif self.btn_collapse_rect.contains(pos):
@@ -1046,6 +1152,11 @@ class IslandWindow(QWidget):
             # 2. Clic sur le bouton de saisie au clavier (Keyboard Ask)
             if self.btn_keyboard_ask_rect.contains(pos):
                 self.trigger_keyboard_ask()
+                return
+
+            # 2.1 Clic sur le bouton Mode Meet (Assistant de Cours)
+            if self.btn_meet_rect.contains(pos) or self.btn_meet_hub_rect.contains(pos):
+                self.toggle_meet_mode()
                 return
 
             # 3. Clic sur le bouton d'expansion latérale (Super Hub)
@@ -1276,12 +1387,13 @@ class IslandWindow(QWidget):
         dot_pos = QPointF(dot_x, cy)
         acc = getattr(self, "accent_color", Config.COLOR_ACCENT_CYAN)
         
-        # Halo lumineux doux à gauche
+        # Halo lumineux doux à gauche (Vert émeraude si Meet Mode actif)
+        dot_color = QColor(34, 197, 94) if getattr(self, "meet_active", False) else acc
         glow = QRadialGradient(dot_pos, 8.5)
-        c_glow = QColor(acc)
+        c_glow = QColor(dot_color)
         c_glow.setAlpha(180)
         glow.setColorAt(0.0, c_glow)
-        c_glow_zero = QColor(acc)
+        c_glow_zero = QColor(dot_color)
         c_glow_zero.setAlpha(0)
         glow.setColorAt(1.0, c_glow_zero)
         painter.setPen(Qt.PenStyle.NoPen)
@@ -1289,8 +1401,15 @@ class IslandWindow(QWidget):
         painter.drawEllipse(dot_pos, 8.5, 8.5)
 
         # Pastille lumineuse compacte à gauche
-        painter.setBrush(QBrush(acc))
+        painter.setBrush(QBrush(dot_color))
         painter.drawEllipse(dot_pos, 3.2, 3.2)
+
+        # Si Meet Mode est actif, badge discret MEET
+        if getattr(self, "meet_active", False):
+            painter.setPen(QColor(34, 197, 94, 230))
+            font_meet = QFont("Segoe UI", 6, QFont.Weight.Bold)
+            painter.setFont(font_meet)
+            painter.drawText(QRectF(dot_x + 8.0, cy - 7.0, 32.0, 14.0), Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, "MEET")
 
         # Indicateur discret d'applications ouvertes à droite
         if len(self.open_windows) > 0:
@@ -1307,6 +1426,8 @@ class IslandWindow(QWidget):
         # Au repos, aucun bouton d'action n'est cliquable sur la pilule
         self.btn_manual_ask_rect = QRectF()
         self.btn_keyboard_ask_rect = QRectF()
+        self.btn_meet_rect = QRectF()
+        self.btn_meet_hub_rect = QRectF()
         self.btn_expand_rect = QRectF()
 
     def _draw_listening_content(self, painter: QPainter, rect: QRectF):
@@ -1341,7 +1462,8 @@ class IslandWindow(QWidget):
         font = QFont("Segoe UI", 9, QFont.Weight.Medium)
         painter.setFont(font)
         text_rect = QRectF(orb_x + 18.0, rect.top(), rect.width() - 50.0, rect.height())
-        painter.drawText(text_rect, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, "Analyse en cours...")
+        label = self.action_title if self.action_title else "Analyse en cours..."
+        painter.drawText(text_rect, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, label)
 
     def _draw_speaking_content(self, painter: QPainter, rect: QRectF):
         header_y = rect.top() + 16.0
@@ -1575,6 +1697,36 @@ class IslandWindow(QWidget):
         kb_col = acc if is_h_kb else QColor(255, 255, 255, 210)
         draw_vector_keyboard(painter, self.btn_keyboard_ask_rect.center().x(), cy, kb_col, scale=0.9)
 
+        # 2.1 Bouton tactile Mode Meet (Assistant de Cours) juste à côté
+        btn_meet_w = 30.0
+        btn_meet_h = 30.0
+        btn_meet_x = btn_kb_x + btn_kb_w + 6.0
+        btn_meet_y = cy - btn_meet_h / 2.0
+        self.btn_meet_rect = QRectF(btn_meet_x, btn_meet_y, btn_meet_w, btn_meet_h)
+
+        is_h_meet = (self.hovered_action_btn == "meet")
+        is_meet_act = getattr(self, "meet_active", False)
+
+        if is_meet_act:
+            painter.setPen(QPen(QColor(34, 197, 94, 220), 1.2))
+            painter.setBrush(QBrush(QColor(34, 197, 94, 55)))
+        elif is_h_meet:
+            painter.setPen(QPen(QColor(acc.red(), acc.green(), acc.blue(), 180), 1.0))
+            painter.setBrush(QBrush(QColor(acc.red(), acc.green(), acc.blue(), 45)))
+        else:
+            painter.setPen(QPen(QColor(255, 255, 255, 28), 1.0))
+            painter.setBrush(QBrush(QColor(255, 255, 255, 14)))
+
+        painter.drawRoundedRect(self.btn_meet_rect, 10.0, 10.0)
+        meet_col = QColor(34, 197, 94) if is_meet_act else (acc if is_h_meet else QColor(255, 255, 255, 210))
+        draw_vector_video_meet(painter, self.btn_meet_rect.center().x(), cy, meet_col, scale=0.9)
+
+        if is_meet_act:
+            # Petite puce d'état verte en haut à droite du bouton Meet
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QBrush(QColor(34, 197, 94)))
+            painter.drawEllipse(QPointF(self.btn_meet_rect.right() - 4.5, self.btn_meet_rect.top() + 4.5), 2.5, 2.5)
+
         # 3. Bouton tactile d'EXPANSION vers le Super Hub à DROITE du dock
         hub_w = 66.0
         hub_h = 28.0
@@ -1595,7 +1747,7 @@ class IslandWindow(QWidget):
         painter.drawText(QRectF(hub_rect.left() + 23.0, cy - 10.0, hub_w - 24.0, 20.0), Qt.AlignmentFlag.AlignCenter, "Hub")
 
         # 4. Icônes d'applications
-        dock_start_x = btn_kb_x + btn_kb_w + 12.0
+        dock_start_x = btn_meet_x + btn_meet_w + 12.0
         hovered_win = None
         display_wins = self.open_windows[:10]
         for i, win in enumerate(display_wins):
@@ -1654,6 +1806,17 @@ class IslandWindow(QWidget):
                 QRectF(label_x, cy - 9.0, label_w, 18.0),
                 Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
                 "Écrire au clavier (Saisie)"
+            )
+        elif self.hovered_action_btn == "meet":
+            is_m_act = getattr(self, "meet_active", False)
+            status_m = "ACTIVÉ (Écoute flux haut-parleurs)" if is_m_act else "Désactivé (Cliquer pour activer)"
+            painter.setPen(QColor(34, 197, 94) if is_m_act else acc)
+            font_t = QFont("Segoe UI", 8, QFont.Weight.Bold)
+            painter.setFont(font_t)
+            painter.drawText(
+                QRectF(label_x, cy - 9.0, label_w, 18.0),
+                Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
+                f"Mode Meet : {status_m}"
             )
         elif self.hovered_action_btn == "expand":
             painter.setPen(QColor(255, 255, 255, 220))
@@ -1771,6 +1934,28 @@ class IslandWindow(QWidget):
         painter.setPen(QColor(acc if is_h_kb else QColor(255, 255, 255, 230)))
         painter.setFont(QFont("Segoe UI", 7, QFont.Weight.Bold))
         painter.drawText(QRectF(kb_x + 22.0, btn_y, kb_w - 26.0, btn_h), Qt.AlignmentFlag.AlignCenter, "Écrire")
+
+        # Bouton tactile Mode Meet (Assistant de Cours) dans l'en-tête du Hub
+        meet_w = 88.0
+        meet_x = kb_x + kb_w + 6.0
+        self.btn_meet_hub_rect = QRectF(meet_x, btn_y, meet_w, btn_h)
+        is_h_meet_hub = (self.hovered_action_btn == "meet")
+        is_m_act = getattr(self, "meet_active", False)
+        if is_m_act:
+            painter.setPen(QPen(QColor(34, 197, 94, 220), 1.2))
+            painter.setBrush(QBrush(QColor(34, 197, 94, 55)))
+        elif is_h_meet_hub:
+            painter.setPen(QPen(QColor(acc.red(), acc.green(), acc.blue(), 180), 1.0))
+            painter.setBrush(QBrush(QColor(acc.red(), acc.green(), acc.blue(), 50)))
+        else:
+            painter.setPen(QPen(QColor(255, 255, 255, 45), 1.0))
+            painter.setBrush(QBrush(QColor(255, 255, 255, 14)))
+        painter.drawRoundedRect(self.btn_meet_hub_rect, 12.0, 12.0)
+        meet_hub_col = QColor(34, 197, 94) if is_m_act else (acc if is_h_meet_hub else QColor(255, 255, 255, 230))
+        draw_vector_video_meet(painter, meet_x + 13.0, btn_y + 12.0, meet_hub_col, scale=0.8)
+        painter.setPen(meet_hub_col)
+        painter.setFont(QFont("Segoe UI", 7, QFont.Weight.Bold))
+        painter.drawText(QRectF(meet_x + 22.0, btn_y, meet_w - 26.0, btn_h), Qt.AlignmentFlag.AlignCenter, "Meet ACTIF" if is_m_act else "Mode Meet")
 
         # 3. Bouton tactile de REPLI / FERMETURE à l'extrémité droite
         col_w = 26.0

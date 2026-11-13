@@ -78,20 +78,27 @@ import subprocess
 
 def kill_other_instances():
     """Ferme toute ancienne instance résiduelle pour garantir un démarrage propre et immédiat."""
+    trace("kill_other_instances: enter")
     try:
         import psutil
         cur_pid = os.getpid()
         parent_pid = os.getppid()
+        trace(f"kill_other_instances: cur_pid={cur_pid}, parent_pid={parent_pid}")
         for proc in psutil.process_iter(['pid', 'name', 'ppid']):
-            pid = proc.info['pid']
-            ppid = proc.info.get('ppid')
-            if pid != cur_pid and pid != parent_pid and ppid != cur_pid and proc.info['name'] and 'antigravityisland' in proc.info['name'].lower():
-                try:
-                    proc.kill()
-                except Exception:
-                    pass
-    except Exception:
-        pass
+            try:
+                pid = proc.info['pid']
+                ppid = proc.info.get('ppid')
+                name = proc.info.get('name') or ''
+                if 'antigravityisland' in name.lower():
+                    trace(f"kill_other_instances: candidate pid={pid}, ppid={ppid}, name={name}")
+                    if pid != cur_pid and pid != parent_pid and ppid != cur_pid:
+                        trace(f"kill_other_instances: killing pid={pid}")
+                        proc.kill()
+            except Exception as pe:
+                trace(f"kill_other_instances: proc error: {pe}")
+    except Exception as e:
+        trace(f"kill_other_instances: global error: {e}")
+    trace("kill_other_instances: exit")
 
 def main():
     trace("Step: main starting")
@@ -140,13 +147,19 @@ def main():
     trace("Step: IslandWebSocketServer started")
 
     # 5. Moteur Push-to-Talk global (Raccourci Windows + Alt)
-    ptt_engine = PushToTalkEngine(window_instance=island, mode=user_settings.get("ptt_mode", "hybrid"))
-    island.ptt_engine = ptt_engine
-    ptt_engine.start()
-    control_center.settings_changed.connect(lambda s: ptt_engine.set_mode(s.get("ptt_mode", "hybrid")))
-    trace("Step: PushToTalkEngine started")
+    trace("Step: creating PushToTalkEngine")
+    try:
+        ptt_engine = PushToTalkEngine(window_instance=island, mode=user_settings.get("ptt_mode", "hybrid"))
+        island.ptt_engine = ptt_engine
+        trace("Step: starting PushToTalkEngine")
+        ptt_engine.start()
+        control_center.settings_changed.connect(lambda s: ptt_engine.set_mode(s.get("ptt_mode", "hybrid")))
+        trace("Step: PushToTalkEngine started")
+    except Exception as e_ptt:
+        trace(f"Step: PushToTalkEngine error: {e_ptt}")
 
     # 6. Icône dans la zone de notification Windows (System Tray)
+    trace("Step: creating SystemTrayIcon")
     tray = QSystemTrayIcon(create_tray_icon(), app)
     tray_menu = QMenu()
 
@@ -172,6 +185,25 @@ def main():
 
     action_stealth.triggered.connect(toggle_stealth_from_tray)
     control_center.settings_changed.connect(lambda s: action_stealth.setChecked(bool(s.get("hide_on_screen_share", True))))
+
+    action_meet = tray_menu.addAction("Mode Meet (Assistant de Cours Automatique)")
+    action_meet.setCheckable(True)
+    action_meet.setChecked(bool(user_settings.get("meet_mode_enabled", False)))
+
+    def toggle_meet_from_tray(checked):
+        island.set_meet_mode(checked)
+        control_center.settings["meet_mode_enabled"] = checked
+        save_settings(control_center.settings)
+        control_center.settings_changed.emit(control_center.settings)
+        if hasattr(control_center, "check_meet_mode"):
+            control_center.check_meet_mode.blockSignals(True)
+            control_center.check_meet_mode.setChecked(checked)
+            control_center.check_meet_mode.blockSignals(False)
+
+    action_meet.triggered.connect(toggle_meet_from_tray)
+    control_center.settings_changed.connect(lambda s: action_meet.setChecked(bool(s.get("meet_mode_enabled", False))))
+    if hasattr(island, "meet_listener") and island.meet_listener:
+        island.meet_listener.status_changed.connect(action_meet.setChecked)
 
     action_toggle = tray_menu.addAction("Basculer l'encoche")
     action_toggle.triggered.connect(lambda: island.hide() if island.isVisible() else island.show())

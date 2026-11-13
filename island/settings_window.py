@@ -77,6 +77,7 @@ def load_settings():
         "autostart": is_autostart_enabled(),
         "screen_index": 0,
         "hide_on_screen_share": True,  # Mode furtif WDA pour visioconférences (Google Meet, Zoom, Teams)
+        "meet_mode_enabled": False,    # Assistant de cours en direct (WASAPI Loopback)
     }
     settings_path = get_settings_file_path()
     if os.path.exists(settings_path):
@@ -753,6 +754,31 @@ class SettingsWindow(QWidget):
         row_stealth.addWidget(self.check_stealth)
         layout_privacy.addLayout(row_stealth)
 
+        # Mode Meet (Assistant de Cours Automatique)
+        row_meet = QHBoxLayout()
+        row_meet.addWidget(QLabel("Mode Meet (Écouteur de cours automatique) :"))
+        row_meet.addStretch()
+        self.check_meet_mode = QCheckBox()
+        self.check_meet_mode.blockSignals(True)
+        self.check_meet_mode.setChecked(bool(self.settings.get("meet_mode_enabled", False)))
+        self.check_meet_mode.blockSignals(False)
+        self.check_meet_mode.setStyleSheet("""
+            QCheckBox::indicator {
+                width: 18px;
+                height: 18px;
+                border-radius: 4px;
+                border: 1px solid #475569;
+                background-color: #1e293b;
+            }
+            QCheckBox::indicator:checked {
+                background-color: #0284c7;
+                border-color: #38bdf8;
+            }
+        """)
+        self.check_meet_mode.toggled.connect(self._on_meet_mode_toggled)
+        row_meet.addWidget(self.check_meet_mode)
+        layout_privacy.addLayout(row_meet)
+
         content_layout.addWidget(card_privacy)
 
         # CARTE 7 : Système & Démarrage Automatique
@@ -994,6 +1020,14 @@ class SettingsWindow(QWidget):
             ctypes.windll.user32.SetWindowDisplayAffinity(ctypes.c_void_p(hwnd), ctypes.c_uint32(affinity))
         except Exception:
             pass
+        self._flash_saved()
+
+    def _on_meet_mode_toggled(self, checked: bool):
+        self.settings["meet_mode_enabled"] = bool(checked)
+        save_settings(self.settings)
+        self.settings_changed.emit(self.settings)
+        if getattr(self, "island_window", None):
+            self.island_window.set_meet_mode(bool(checked))
         self._flash_saved()
 
     def _on_autostart_toggled(self, checked: bool):
