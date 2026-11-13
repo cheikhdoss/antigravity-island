@@ -569,31 +569,44 @@ class IslandWindow(QWidget):
         Déclenché lorsqu'une question du professeur est détectée dans le flux Meet.
         Capture l'écran immédiatement (pour voir la slide projetée), analyse la question
         avec le modèle de vision cloud et affiche la réponse sur l'Island.
+        Intègre la mémoire persistante DeepTalk pour résoudre les questions de suivi
+        (ex: 'c'est quoi une variable' -> 'dans quel cas on l'utilise ?' -> 'donne-moi un exemple').
         """
         print(f"[Island Meet] Déclenchement de l'analyse pour : « {question_text} »")
         self.set_state("thinking", {"title": f"🎓 Question : {question_text[:30]}..."})
 
         def worker():
             from island.brain import capture_screen_base64, query_vision_model, generate_response
+            from island.deeptalk import DeepTalk
+
+            dt = DeepTalk.get_instance()
+            history_summary = dt.get_context_summary_text(limit_turns=5)
+
             b64_screen = capture_screen_base64()
             prompt = (
-                f"[COURS / RÉUNION MEET EN DIRECT]\n"
-                f"Le professeur vient de poser cette question à l'oral :\n"
+                f"[COURS / RÉUNION MEET EN DIRECT - ASSISTANT ÉTUDIANT]\n"
+                f"{history_summary}"
+                f"[NOUVELLE QUESTION DU PROFESSEUR (EN COURS)] :\n"
                 f"« {question_text} »\n\n"
-                f"CONSIGNES :\n"
-                f"1. Examine attentivement l'écran partagé par le professeur (slides de cours, présentation, schéma, QCM, code source).\n"
-                f"2. Si la réponse découle des slides ou du document affiché à l'écran, utilise ce contexte exact.\n"
-                f"3. Si l'écran ne montre pas de slide pertinente ou n'a pas de rapport, réponds directement à la question avec des connaissances académiques solides.\n"
-                f"4. Fournis une réponse claire, directe et concise (2 à 4 phrases maximum), directement utilisable par l'étudiant pour répondre au professeur."
+                f"CONSIGNES CRUCIALES POUR L'ASSISTANT :\n"
+                f"1. RÉSOLUTION DE CONTEXTE & MÉMOIRE DEEPTALK : Si la question du professeur fait référence au sujet précédent ou utilise des pronoms ('dans quel cas on l'utilise ?', 'donne-moi un exemple', 'pourquoi ?', 'comment ça marche ?'), relie DIRECTEMENT ta réponse au concept expliqué au tour précédent !\n"
+                f"2. VISUEL & SLIDES : Examine attentivement l'écran partagé par le professeur (slides de cours, présentation, schéma, QCM, code source).\n"
+                f"3. Si la réponse découle des slides ou du document affiché à l'écran, utilise ce contexte exact.\n"
+                f"4. Si l'écran ne montre pas de slide pertinente, réponds directement à la question avec des connaissances académiques solides et précises.\n"
+                f"5. Fournis une réponse claire, directe et concise (2 à 4 phrases maximum), directement prête à être lue ou dite par l'étudiant au professeur."
             )
             try:
                 ans = None
                 if b64_screen:
-                    ans = query_vision_model(prompt, b64_screen)
+                    ans = query_vision_model(prompt)
                 if not ans:
                     ans = generate_response(prompt)
                 if not ans:
                     ans = "Impossible de déterminer la réponse automatiquement."
+
+                # Sauvegarde immédiate dans la mémoire persistante DeepTalk
+                dt.record_turn(question_text, ans)
+                print(f"[Island Meet DeepTalk] Tour de cours enregistré en mémoire : '{question_text}' ({dt.count_turns()} tours)")
 
                 print(f"[Island Meet] Réponse générée : {ans[:100]}...")
                 from PyQt6.QtCore import QTimer

@@ -52,25 +52,38 @@ class DeepTalk:
             print("[DeepTalk] Erreur chargement mémoire :", e)
             self.history = []
 
-    def _save_async(self):
-        """Sauvegarde asynchrone sans bloquer le thread de réponse UI."""
+    _writer_lock = threading.Lock()
+
+    def _save(self):
+        """Sauvegarde atomique et ordonnee de la memoire persistante sur disque."""
         with self._lock:
             snapshot = list(self.history)
 
-        def _writer():
+        with DeepTalk._writer_lock:
+            tmp_file = f"{self.storage_file}.{os.getpid()}_{time.time_ns()}.tmp"
             try:
                 os.makedirs(self.storage_dir, exist_ok=True)
-                tmp_file = self.storage_file + ".tmp"
                 with open(tmp_file, "w", encoding="utf-8") as f:
                     json.dump(snapshot, f, ensure_ascii=False, indent=2)
-                if os.path.exists(self.storage_file):
-                    os.replace(tmp_file, self.storage_file)
-                else:
-                    os.rename(tmp_file, self.storage_file)
+                    f.flush()
+                    os.fsync(f.fileno())
+                for _ in range(10):
+                    try:
+                        os.replace(tmp_file, self.storage_file)
+                        break
+                    except (PermissionError, OSError):
+                        time.sleep(0.02)
             except Exception as e:
-                print("[DeepTalk] Erreur écriture persistante :", e)
+                print("[DeepTalk] Erreur ecriture persistante :", e)
+            finally:
+                if os.path.exists(tmp_file):
+                    try:
+                        os.remove(tmp_file)
+                    except Exception:
+                        pass
 
-        threading.Thread(target=_writer, daemon=True).start()
+    def _save_async(self):
+        self._save()
 
     def record_turn(self, user_query: str, assistant_response: str):
         """Enregistre un tour de dialogue complet dans la mémoire persistante."""
