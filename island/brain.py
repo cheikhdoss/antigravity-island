@@ -547,16 +547,16 @@ def query_nvidia_nim(user_query: str, messages: Optional[List[dict]] = None, mod
         print(f"[Brain NIM - {selected_model}] Erreur appel API : {e}")
         return ""
 
-def query_agy_llm(user_query: str, timeout: int = 30, on_chunk: Optional[Callable[[str], None]] = None) -> str:
+def query_agy_llm(user_query: str, timeout: int = 30, on_chunk: Optional[Callable[[str], None]] = None, conversation_history: str = "") -> str:
     """
-    Interroge le démon local agy via ACP avec streaming live.
+    Interroge le démon local agy via ACP avec streaming live, intelligence supérieure, savoir et compétences.
     """
     daemon = AgyDaemon.get_instance()
     try:
         t0 = time.time()
-        resp = daemon.ask(user_query, on_chunk=on_chunk, timeout=timeout)
+        resp = daemon.ask(user_query, on_chunk=on_chunk, timeout=timeout, conversation_history=conversation_history)
         if resp:
-            print(f"[Brain AGY] Réponse ACP générée en {time.time() - t0:.2f}s : '{resp}'")
+            print(f"[Brain AGY] Réponse ACP d'élite générée en {time.time() - t0:.2f}s : '{resp}'")
             return resp
     except Exception as e:
         print(f"[Brain AGY] Erreur démon : {e}")
@@ -821,7 +821,7 @@ def generate_response(query: str, on_chunk: Optional[Callable[[str], None]] = No
             print("[Brain] Repli sur Agnes AI...")
             raw_resp = query_agnes_ai(effective_query, messages=multi_turn_messages, timeout=12, on_chunk=on_chunk)
     else:
-        raw_resp = query_agy_llm(effective_text_query, timeout=25, on_chunk=on_chunk)
+        raw_resp = query_agy_llm(effective_query, timeout=35, on_chunk=on_chunk, conversation_history=conversation_summary)
         if not raw_resp:
             print("[Brain] Repli sur Agnes AI...")
             raw_resp = query_agnes_ai(effective_query, messages=multi_turn_messages, timeout=12, on_chunk=on_chunk)

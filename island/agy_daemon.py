@@ -7,6 +7,7 @@ import threading
 import subprocess
 import re
 from typing import Optional, Callable
+from island.agy_knowledge import AgyKnowledge
 
 AGY_PATH = r"C:\Users\pro\AppData\Local\agy\bin\agy.EXE"
 
@@ -88,25 +89,73 @@ class AgyDaemon:
             self.session_id = res_new["sessionId"]
             print(f"[AgyDaemon] Session ACP active : {self.session_id}")
 
-            # 3. Configuration du modèle rapide (gemini-3.8-flash) et pensée low pour latence minimale
+            # 3. Configuration du modèle, pensée réactive et mode accept-edits depuis settings.json
+            cfg_model = "gemini-3.8-flash"
+            cfg_thought = "low"
+            try:
+                appdata = os.environ.get("APPDATA", os.path.expanduser("~"))
+                settings_path = os.path.join(appdata, "AntigravityIsland", "settings.json")
+                if os.path.exists(settings_path):
+                    with open(settings_path, "r", encoding="utf-8-sig") as f:
+                        data = json.load(f)
+                        cfg_model = data.get("agy_model", cfg_model)
+                        cfg_thought = data.get("agy_thought_level", cfg_thought)
+            except Exception:
+                pass
+
             try:
                 mod_id = self._next_id()
-                self._send_request_sync("session/set_config_option", {"sessionId": self.session_id, "configId": "model", "value": "gemini-3.8-flash"}, req_id=mod_id, timeout=5.0)
+                self._send_request_sync("session/set_config_option", {"sessionId": self.session_id, "configId": "model", "value": cfg_model}, req_id=mod_id, timeout=5.0)
+                print(f"[AgyDaemon] Modèle configuré : {cfg_model}")
             except Exception as e:
                 print(f"[AgyDaemon] Erreur config modèle : {e}")
 
             try:
                 cfg_id = self._next_id()
-                self._send_request_sync("session/set_config_option", {"sessionId": self.session_id, "configId": "thought_level", "value": "low"}, req_id=cfg_id, timeout=5.0)
+                self._send_request_sync("session/set_config_option", {"sessionId": self.session_id, "configId": "thought_level", "value": cfg_thought}, req_id=cfg_id, timeout=5.0)
+                print(f"[AgyDaemon] Pensée configurée : {cfg_thought}")
             except Exception as e:
                 print(f"[AgyDaemon] Erreur config pensée : {e}")
 
+            try:
+                mode_id = self._next_id()
+                self._send_request_sync("session/set_config_option", {"sessionId": self.session_id, "configId": "mode", "value": "accept-edits"}, req_id=mode_id, timeout=5.0)
+            except Exception as e:
+                print(f"[AgyDaemon] Erreur config mode : {e}")
+
             self.is_ready = True
-            print("[AgyDaemon] Démon Antigravity ACP opérationnel et prêt !")
+            print("[AgyDaemon] Démon Antigravity ACP d'élite (Intelligence, Compétences & Savoir) opérationnel et prêt !")
 
         except Exception as e:
             print(f"[AgyDaemon] Erreur lors du démarrage du démon : {e}")
             self._running = False
+
+    def apply_config(self, model: Optional[str] = None, thought_level: Optional[str] = None, mode: Optional[str] = None):
+        """Applique dynamiquement les réglages de modèle, de niveau de pensée et de mode à la session ACP."""
+        if not self.is_ready or not self.session_id:
+            return
+        with self._lock:
+            if model:
+                try:
+                    rid = self._next_id()
+                    self._send_request_sync("session/set_config_option", {"sessionId": self.session_id, "configId": "model", "value": model}, req_id=rid, timeout=3.0)
+                    print(f"[AgyDaemon] Modèle configuré : {model}")
+                except Exception as e:
+                    print(f"[AgyDaemon] Erreur set model : {e}")
+            if thought_level:
+                try:
+                    rid = self._next_id()
+                    self._send_request_sync("session/set_config_option", {"sessionId": self.session_id, "configId": "thought_level", "value": thought_level}, req_id=rid, timeout=3.0)
+                    print(f"[AgyDaemon] Niveau de pensée configuré : {thought_level}")
+                except Exception as e:
+                    print(f"[AgyDaemon] Erreur set thought_level : {e}")
+            if mode:
+                try:
+                    rid = self._next_id()
+                    self._send_request_sync("session/set_config_option", {"sessionId": self.session_id, "configId": "mode", "value": mode}, req_id=rid, timeout=3.0)
+                    print(f"[AgyDaemon] Mode configuré : {mode}")
+                except Exception as e:
+                    print(f"[AgyDaemon] Erreur set mode : {e}")
 
     def _prewarm(self):
         """Pré-chauffe la session LLM pour éliminer tout temps d'attente à la première question de l'utilisateur."""
@@ -212,9 +261,9 @@ class AgyDaemon:
 
         print("[AgyDaemon] Boucle de lecture stdout terminée.")
 
-    def ask(self, prompt: str, on_chunk: Optional[Callable[[str], None]] = None, timeout: float = 30.0) -> str:
+    def ask(self, prompt: str, on_chunk: Optional[Callable[[str], None]] = None, timeout: float = 30.0, conversation_history: str = "") -> str:
         """
-        Envoie un prompt au modèle LLM persistant et renvoie la réponse complète ultra-rapide.
+        Envoie un prompt au modèle LLM persistant Antigravity ACP avec tout le savoir et les compétences système.
         """
         if not prompt or not prompt.strip():
             return ""
@@ -244,12 +293,8 @@ class AgyDaemon:
             container = {"result": None, "error": None, "event": evt}
             self._pending_requests[req_id] = container
 
-            system_context = (
-                "Consigne: Tu es l'assistant rapide de l'encoche Dynamic Island sur Windows. "
-                "Réponds DIRECTEMENT en 1 SEULE phrase concise et informative en français. N'utilise aucun outil. "
-                "Pas de préambule, pas d'astérisques markdown ni d'emoji.\n\n"
-                f"Question : {prompt.strip()}"
-            )
+            # Construction du prompt d'intelligence supérieure avec profil, projets, compétences et contexte temps réel
+            system_context = AgyKnowledge.format_user_prompt(prompt, conversation_history=conversation_history)
 
             prompt_payload = {
                 "jsonrpc": "2.0",
@@ -288,7 +333,7 @@ class AgyDaemon:
     def ask_vision(self, prompt: str, image_b64: str, mime_type: str = "image/jpeg", timeout: float = 30.0, on_chunk: Optional[Callable[[str], None]] = None) -> str:
         """
         Envoie une requête multimodale (image + question) au démon ACP persistant Antigravity.
-        Supporte promptCapabilities: image=True.
+        Supporte promptCapabilities: image=True avec intelligence visuelle complète.
         """
         if not prompt or not prompt.strip():
             prompt = "Que vois-tu à l'écran ?"
@@ -321,12 +366,8 @@ class AgyDaemon:
             container = {"result": None, "error": None, "event": evt}
             self._pending_requests[req_id] = container
 
-            system_context = (
-                "Consigne: Tu es l'assistant visuel rapide de l'encoche Dynamic Island sur Windows. "
-                "Analyse la capture d'écran fournie et réponds DIRECTEMENT en 1 à 2 phrases concises en français. "
-                "N'utilise aucun outil. Pas d'astérisques markdown ni d'emoji.\n\n"
-                f"Question : {prompt.strip()}"
-            )
+            # Construction du prompt d'intelligence visuelle avec savoir et contexte
+            system_context = AgyKnowledge.format_vision_prompt(prompt)
 
             prompt_payload = {
                 "jsonrpc": "2.0",
@@ -373,17 +414,25 @@ class AgyDaemon:
             return clean_text
 
     def _clean_text(self, text: str) -> str:
-        """Nettoie le texte des astérisques markdown et préfixes parasites pour une diction vocale parfaite."""
+        """
+        Nettoie le texte des astérisques et balises pour une diction vocale et affichage parfaits,
+        TOUT EN PRÉSERVANT STRICTEMENT les blocs d'action JSON (Computer Use) et blocs de code utiles.
+        """
         if not text:
             return ""
+
+        # Si le texte contient un bloc JSON d'action agent, on le préserve intact pour le parseur d'actions
+        if re.search(r'```(?:json)?\s*\{.*?"action"\s*:', text, re.DOTALL) or re.search(r'\{.*?"action"\s*:', text, re.DOTALL):
+            return text.strip()
+
         # Enlever les astérisques markdown (* ou **)
         t = re.sub(r'\*+', '', text)
-        # Enlever les balises ou code fences
-        t = re.sub(r'```.*?```', '', t, flags=re.DOTALL)
+        # Enlever les balises de code simples
+        t = re.sub(r'```(?:json|python|bash|powershell)?', '', t)
         t = re.sub(r'`', '', t)
         # Enlever les préfixes de type "Antigravity :" ou "Réponse :"
         t = re.sub(r'^(Antigravity\s*:|Réponse\s*:|Ta réponse\s*:)\s*', '', t, flags=re.IGNORECASE)
-        # Remplacer les sauts de lignes multiples par un espace
+        # Remplacer les sauts de lignes multiples par un espace propre
         t = re.sub(r'\s+', ' ', t).strip()
         return t
 

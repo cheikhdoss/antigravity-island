@@ -906,6 +906,30 @@ class DesktopController:
             name = params.get("name") or params.get("app") or ""
             return DesktopController.open_application(name)
 
+        elif act == "open_project":
+            pname = (params.get("name") or params.get("project") or "").lower().strip()
+            if "senstory" in pname:
+                target = r"C:\Users\pro\second-brain\001-PROJECTS\SenStory.md"
+                if os.path.exists(target):
+                    os.system(f'explorer.exe "{target}"')
+                    return True, "Projet SenStory ouvert."
+                return True, "Dossier SenStory ouvert."
+            elif any(w in pname for w in ["obsidian", "second-brain", "second_brain", "brain", "note"]):
+                sb_path = r"C:\Users\pro\second-brain"
+                if os.path.exists(sb_path):
+                    os.system(f'explorer.exe "{sb_path}"')
+                    return True, "Second Brain Obsidian ouvert."
+            elif any(w in pname for w in ["island", "antigravity"]):
+                isl_path = r"C:\Users\pro\.gemini\antigravity\scratch\antigravity-island"
+                if os.path.exists(isl_path):
+                    os.system(f'explorer.exe "{isl_path}"')
+                    return True, "Projet Antigravity Island ouvert."
+            elif "samatop" in pname:
+                return DesktopController.browse_web("http://localhost:5190", site="direct")
+            elif "samapdf" in pname:
+                return DesktopController.browse_web("https://samapdf.online", site="direct")
+            return DesktopController.open_application(pname)
+
         elif act == "close_app":
             name = params.get("name") or params.get("app") or "active"
             return DesktopController.close_application(name)

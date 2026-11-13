@@ -72,6 +72,8 @@ def load_settings():
         "voice_rate": "+10%",
         "llm_provider": "agnes",     # "agnes" (Agnes AI 3.0 Flash), "gemini", "nim" (NVIDIA NIM), "agy" (AGY CLI ACP)
         "nim_model": "nvidia/nemotron-3.5-bolt-e4b",
+        "agy_model": "gemini-3.8-flash",  # "gemini-3.8-flash", "claude-sonnet-4-6", "claude-opus-4-6-thinking", "gpt-oss-120b-medium"
+        "agy_thought_level": "low",       # "low" (instantané), "medium", "high"
         "vision_provider": "agnes",   # "agnes", "gemini_vl", "agy_vl", "nim_vl", "ocr"
         "gemini_api_key": "",         # Clé API Google Gemini pour requêtes directes
         "stt_provider": "antigravity", # "antigravity" (DeepMind Connect-RPC), "google", "offline"
@@ -627,6 +629,45 @@ class SettingsWindow(QWidget):
         row_nim_model.addWidget(self.combo_nim_model)
         layout_ai.addLayout(row_nim_model)
 
+        # Modèle Antigravity AGY ACP
+        row_agy_model = QHBoxLayout()
+        row_agy_model.addWidget(QLabel("Modèle Antigravity AGY :"))
+        row_agy_model.addStretch()
+        self.combo_agy_model = QComboBox()
+        self.combo_agy_model.blockSignals(True)
+        self.combo_agy_model.addItem("💎 Gemini 3.8 Flash (Recommandé - Ultra rapide)", "gemini-3.8-flash")
+        self.combo_agy_model.addItem("🧠 Claude Sonnet 4.6 (Thinking)", "claude-sonnet-4-6")
+        self.combo_agy_model.addItem("👑 Claude Opus 4.6 (Thinking)", "claude-opus-4-6-thinking")
+        self.combo_agy_model.addItem("⚡ GPT-OSS 120B (Medium)", "gpt-oss-120b-medium")
+
+        cur_agy_m = self.settings.get("agy_model", "gemini-3.8-flash")
+        idx_am = self.combo_agy_model.findData(cur_agy_m)
+        if idx_am >= 0:
+            self.combo_agy_model.setCurrentIndex(idx_am)
+        self.combo_agy_model.blockSignals(False)
+        self.combo_agy_model.currentIndexChanged.connect(self._on_agy_model_changed)
+        row_agy_model.addWidget(self.combo_agy_model)
+        layout_ai.addLayout(row_agy_model)
+
+        # Niveau de réflexion AGY (Thought Level)
+        row_agy_thought = QHBoxLayout()
+        row_agy_thought.addWidget(QLabel("Réflexion AGY (Thought Level) :"))
+        row_agy_thought.addStretch()
+        self.combo_agy_thought = QComboBox()
+        self.combo_agy_thought.blockSignals(True)
+        self.combo_agy_thought.addItem("⚡ Rapide (Low - Idéal pour Island)", "low")
+        self.combo_agy_thought.addItem("⚖️ Équilibré (Medium)", "medium")
+        self.combo_agy_thought.addItem("🧠 Poussé (High - Réflexion complète)", "high")
+
+        cur_th = self.settings.get("agy_thought_level", "low")
+        idx_th = self.combo_agy_thought.findData(cur_th)
+        if idx_th >= 0:
+            self.combo_agy_thought.setCurrentIndex(idx_th)
+        self.combo_agy_thought.blockSignals(False)
+        self.combo_agy_thought.currentIndexChanged.connect(self._on_agy_thought_changed)
+        row_agy_thought.addWidget(self.combo_agy_thought)
+        layout_ai.addLayout(row_agy_thought)
+
         # Modèle Vision & Analyse d'écran
         row_vision = QHBoxLayout()
         row_vision.addWidget(QLabel("Vision & Analyse Écran :"))
@@ -987,6 +1028,30 @@ class SettingsWindow(QWidget):
         save_settings(self.settings)
         self.settings_changed.emit(self.settings)
         self._flash_saved()
+
+    def _on_agy_model_changed(self, idx: int):
+        m = self.combo_agy_model.currentData()
+        self.settings["agy_model"] = m
+        save_settings(self.settings)
+        self.settings_changed.emit(self.settings)
+        self._flash_saved()
+        try:
+            from island.agy_daemon import AgyDaemon
+            AgyDaemon.get_instance().apply_config(model=m)
+        except Exception:
+            pass
+
+    def _on_agy_thought_changed(self, idx: int):
+        th = self.combo_agy_thought.currentData()
+        self.settings["agy_thought_level"] = th
+        save_settings(self.settings)
+        self.settings_changed.emit(self.settings)
+        self._flash_saved()
+        try:
+            from island.agy_daemon import AgyDaemon
+            AgyDaemon.get_instance().apply_config(thought_level=th)
+        except Exception:
+            pass
 
     def _on_vision_provider_changed(self, idx: int):
         v = self.combo_vision.currentData()
