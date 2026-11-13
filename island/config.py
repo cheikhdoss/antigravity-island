@@ -78,7 +78,7 @@ class Config:
             title="Applications ouvertes"
         ),
         "control_hub": IslandStateConfig(
-            width=700,
+            width=780,
             height=280,
             radius=28,
             title="Hub d'actions & Contrôle"

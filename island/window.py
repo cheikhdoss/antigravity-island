@@ -1062,27 +1062,17 @@ class IslandWindow(QWidget):
         pos = event.position()
         self.leave_debounce_timer.stop()
 
-        # Détection du survol des boutons d'actions tactiles
         prev_action_btn = self.hovered_action_btn
-        if self.btn_manual_ask_rect.contains(pos):
-            self.hovered_action_btn = "ask"
-        elif self.btn_keyboard_ask_rect.contains(pos):
-            self.hovered_action_btn = "keyboard_ask"
-        elif self.btn_meet_rect.contains(pos) or self.btn_meet_hub_rect.contains(pos):
-            self.hovered_action_btn = "meet"
-        elif self.btn_expand_rect.contains(pos):
-            self.hovered_action_btn = "expand"
-        elif self.btn_collapse_rect.contains(pos):
-            self.hovered_action_btn = "collapse"
-        elif self.current_state == "prompt_input":
-            if self.btn_prompt_send_rect.contains(pos):
-                self.hovered_action_btn = "prompt_send"
-            elif self.btn_prompt_cancel_rect.contains(pos):
-                self.hovered_action_btn = "prompt_cancel"
-            else:
-                self.hovered_action_btn = None
-        elif self.current_state == "control_hub":
-            if self.btn_screenshot_rect.contains(pos):
+        if self.current_state == "control_hub":
+            if self.btn_manual_ask_rect.contains(pos):
+                self.hovered_action_btn = "ask"
+            elif self.btn_keyboard_ask_rect.contains(pos):
+                self.hovered_action_btn = "keyboard_ask"
+            elif self.btn_meet_hub_rect.contains(pos):
+                self.hovered_action_btn = "meet"
+            elif self.btn_collapse_rect.contains(pos):
+                self.hovered_action_btn = "collapse"
+            elif self.btn_screenshot_rect.contains(pos):
                 self.hovered_action_btn = "screenshot"
             elif self.btn_desktop_rect.contains(pos):
                 self.hovered_action_btn = "desktop"
@@ -1090,6 +1080,29 @@ class IslandWindow(QWidget):
                 self.hovered_action_btn = "settings"
             elif self.btn_clear_notifs_rect.contains(pos):
                 self.hovered_action_btn = "clear_notifs"
+            else:
+                self.hovered_action_btn = None
+        elif self.current_state == "minimized_dock":
+            if self.btn_manual_ask_rect.contains(pos):
+                self.hovered_action_btn = "ask"
+            elif self.btn_keyboard_ask_rect.contains(pos):
+                self.hovered_action_btn = "keyboard_ask"
+            elif self.btn_meet_rect.contains(pos):
+                self.hovered_action_btn = "meet"
+            elif self.btn_expand_rect.contains(pos):
+                self.hovered_action_btn = "expand"
+            else:
+                self.hovered_action_btn = None
+        elif self.current_state == "prompt_input":
+            if self.btn_prompt_send_rect.contains(pos):
+                self.hovered_action_btn = "prompt_send"
+            elif self.btn_prompt_cancel_rect.contains(pos):
+                self.hovered_action_btn = "prompt_cancel"
+            else:
+                self.hovered_action_btn = None
+        elif self.current_state == "listening":
+            if self.btn_manual_ask_rect.contains(pos):
+                self.hovered_action_btn = "ask"
             else:
                 self.hovered_action_btn = None
         else:
@@ -1892,6 +1905,7 @@ class IslandWindow(QWidget):
     def _draw_control_hub_content(self, painter: QPainter, rect: QRectF):
         """
         Rendu du Super Hub de Contrôle (Hover intentionnel ou Clic sur bouton Agrandir) :
+        - En-tête aéré avec zéro collision : Titre, Outils IA à gauche, Utilitaires à droite.
         - Bouton explicite 'Demander' avec microphone vectoriel pour poser toute question à la souris.
         - Bouton explicite de repli / fermeture sur le bord droit.
         - En-tête avec Actions Rapides vectorielles (Capture, Bureau, Réglages, Vider notifs).
@@ -1910,7 +1924,7 @@ class IslandWindow(QWidget):
         painter.setFont(font_head)
         painter.setPen(Config.COLOR_TEXT_PRIMARY)
         painter.drawText(
-            QRectF(rect.left() + 30.0, rect.top() + 11.0, 140.0, 24.0),
+            QRectF(rect.left() + 30.0, rect.top() + 11.0, 115.0, 24.0),
             Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
             "TABLEAU DE BORD"
         )
@@ -1918,9 +1932,10 @@ class IslandWindow(QWidget):
         btn_y = rect.top() + 11.0
         btn_h = 24.0
 
-        # 2. Boutons tactiles Demander (Microphone) et Écrire (Clavier) dans l'en-tête
-        ask_w = 84.0
-        ask_x = rect.left() + 142.0
+        # 2. Boutons tactiles IA à GAUCHE (Demander, Écrire, Mode Meet)
+        # 2.1 Demander (Microphone)
+        ask_w = 78.0
+        ask_x = rect.left() + 150.0
         self.btn_manual_ask_rect = QRectF(ask_x, btn_y, ask_w, btn_h)
         is_h_ask = (self.hovered_action_btn == "ask")
         if is_h_ask:
@@ -1935,8 +1950,8 @@ class IslandWindow(QWidget):
         painter.setFont(QFont("Segoe UI", 7, QFont.Weight.Bold))
         painter.drawText(QRectF(ask_x + 22.0, btn_y, ask_w - 26.0, btn_h), Qt.AlignmentFlag.AlignCenter, "Demander")
 
-        # Bouton tactile Écrire / Clavier dans l'en-tête
-        kb_w = 76.0
+        # 2.2 Écrire (Clavier)
+        kb_w = 68.0
         kb_x = ask_x + ask_w + 6.0
         self.btn_keyboard_ask_rect = QRectF(kb_x, btn_y, kb_w, btn_h)
         is_h_kb = (self.hovered_action_btn == "keyboard_ask")
@@ -1952,8 +1967,8 @@ class IslandWindow(QWidget):
         painter.setFont(QFont("Segoe UI", 7, QFont.Weight.Bold))
         painter.drawText(QRectF(kb_x + 22.0, btn_y, kb_w - 26.0, btn_h), Qt.AlignmentFlag.AlignCenter, "Écrire")
 
-        # Bouton tactile Mode Meet (Assistant de Cours) dans l'en-tête du Hub
-        meet_w = 88.0
+        # 2.3 Mode Meet (Assistant de Cours)
+        meet_w = 82.0
         meet_x = kb_x + kb_w + 6.0
         self.btn_meet_hub_rect = QRectF(meet_x, btn_y, meet_w, btn_h)
         is_h_meet_hub = (self.hovered_action_btn == "meet")
@@ -1975,60 +1990,69 @@ class IslandWindow(QWidget):
         painter.drawText(QRectF(meet_x + 22.0, btn_y, meet_w - 26.0, btn_h), Qt.AlignmentFlag.AlignCenter, "Meet ACTIF" if is_m_act else "Mode Meet")
 
         # 3. Bouton tactile de REPLI / FERMETURE à l'extrémité droite
-        col_w = 26.0
+        col_w = 24.0
         col_x = rect.right() - col_w - 14.0
         self.btn_collapse_rect = QRectF(col_x, btn_y, col_w, btn_h)
         is_h_col = (self.hovered_action_btn == "collapse")
         painter.setPen(QPen(QColor(255, 255, 255, 80 if is_h_col else 30), 1.0))
         painter.setBrush(QBrush(QColor(255, 255, 255, 35 if is_h_col else 15)))
         painter.drawRoundedRect(self.btn_collapse_rect, 12.0, 12.0)
-        draw_vector_expand_icon(painter, col_x + 13.0, btn_y + 12.0, QColor(255, 255, 255, 240 if is_h_col else 180), scale=0.9, is_expanded=True)
+        draw_vector_expand_icon(painter, col_x + 12.0, btn_y + 12.0, QColor(255, 255, 255, 240 if is_h_col else 180), scale=0.9, is_expanded=True)
 
-        # 4. Boutons d'actions rapides vectoriels (Screenshot, Bureau, Réglages, Vider notifs)
+        # 4. Actions rapides vectorielles (alignées proprement de droite à gauche sans chevauchement)
+        font_btn = QFont("Segoe UI", 7, QFont.Weight.Medium)
+
         # 4.1 Vider notifs
-        self.btn_clear_notifs_rect = QRectF(col_x - 84.0, btn_y, 78.0, btn_h)
+        clear_w = 66.0
+        clear_x = col_x - clear_w - 6.0
+        self.btn_clear_notifs_rect = QRectF(clear_x, btn_y, clear_w, btn_h)
         is_h_clear = (self.hovered_action_btn == "clear_notifs")
         painter.setPen(QPen(QColor(255, 255, 255, 60 if is_h_clear else 25), 1.0))
         painter.setBrush(QBrush(QColor(255, 255, 255, 30 if is_h_clear else 14)))
         painter.drawRoundedRect(self.btn_clear_notifs_rect, 12.0, 12.0)
-        draw_vector_trash(painter, self.btn_clear_notifs_rect.left() + 14.0, btn_y + 12.0, QColor(255, 255, 255, 220 if is_h_clear else 170), scale=0.8)
+        draw_vector_trash(painter, clear_x + 13.0, btn_y + 12.0, QColor(255, 255, 255, 220 if is_h_clear else 170), scale=0.8)
         painter.setPen(QColor(255, 255, 255, 220 if is_h_clear else 170))
-        font_btn = QFont("Segoe UI", 7, QFont.Weight.Medium)
         painter.setFont(font_btn)
-        painter.drawText(QRectF(self.btn_clear_notifs_rect.left() + 20.0, btn_y, 54.0, btn_h), Qt.AlignmentFlag.AlignCenter, "Effacer")
+        painter.drawText(QRectF(clear_x + 20.0, btn_y, clear_w - 24.0, btn_h), Qt.AlignmentFlag.AlignCenter, "Effacer")
 
         # 4.2 Réglages
-        self.btn_settings_rect = QRectF(self.btn_clear_notifs_rect.left() - 86.0, btn_y, 80.0, btn_h)
+        set_w = 72.0
+        set_x = clear_x - set_w - 6.0
+        self.btn_settings_rect = QRectF(set_x, btn_y, set_w, btn_h)
         is_h_set = (self.hovered_action_btn == "settings")
         painter.setPen(QPen(QColor(255, 255, 255, 60 if is_h_set else 25), 1.0))
         painter.setBrush(QBrush(QColor(255, 255, 255, 30 if is_h_set else 14)))
         painter.drawRoundedRect(self.btn_settings_rect, 12.0, 12.0)
-        draw_vector_gear(painter, self.btn_settings_rect.left() + 14.0, btn_y + 12.0, QColor(255, 255, 255, 220 if is_h_set else 170), scale=0.8)
+        draw_vector_gear(painter, set_x + 13.0, btn_y + 12.0, QColor(255, 255, 255, 220 if is_h_set else 170), scale=0.8)
         painter.setPen(QColor(255, 255, 255, 220 if is_h_set else 170))
         painter.setFont(font_btn)
-        painter.drawText(QRectF(self.btn_settings_rect.left() + 20.0, btn_y, 56.0, btn_h), Qt.AlignmentFlag.AlignCenter, "Réglages")
+        painter.drawText(QRectF(set_x + 20.0, btn_y, set_w - 24.0, btn_h), Qt.AlignmentFlag.AlignCenter, "Réglages")
 
         # 4.3 Afficher Bureau
-        self.btn_desktop_rect = QRectF(self.btn_settings_rect.left() - 78.0, btn_y, 72.0, btn_h)
+        desk_w = 66.0
+        desk_x = set_x - desk_w - 6.0
+        self.btn_desktop_rect = QRectF(desk_x, btn_y, desk_w, btn_h)
         is_h_desk = (self.hovered_action_btn == "desktop")
         painter.setPen(QPen(QColor(255, 255, 255, 60 if is_h_desk else 25), 1.0))
         painter.setBrush(QBrush(QColor(255, 255, 255, 30 if is_h_desk else 14)))
         painter.drawRoundedRect(self.btn_desktop_rect, 12.0, 12.0)
-        draw_vector_monitor(painter, self.btn_desktop_rect.left() + 14.0, btn_y + 12.0, QColor(255, 255, 255, 220 if is_h_desk else 170), scale=0.8)
+        draw_vector_monitor(painter, desk_x + 13.0, btn_y + 12.0, QColor(255, 255, 255, 220 if is_h_desk else 170), scale=0.8)
         painter.setPen(QColor(255, 255, 255, 220 if is_h_desk else 170))
         painter.setFont(font_btn)
-        painter.drawText(QRectF(self.btn_desktop_rect.left() + 20.0, btn_y, 48.0, btn_h), Qt.AlignmentFlag.AlignCenter, "Bureau")
+        painter.drawText(QRectF(desk_x + 20.0, btn_y, desk_w - 24.0, btn_h), Qt.AlignmentFlag.AlignCenter, "Bureau")
 
         # 4.4 Screenshot
-        self.btn_screenshot_rect = QRectF(self.btn_desktop_rect.left() - 86.0, btn_y, 80.0, btn_h)
+        shot_w = 72.0
+        shot_x = desk_x - shot_w - 6.0
+        self.btn_screenshot_rect = QRectF(shot_x, btn_y, shot_w, btn_h)
         is_h_shot = (self.hovered_action_btn == "screenshot")
         painter.setPen(QPen(QColor(acc.red(), acc.green(), acc.blue(), 180 if is_h_shot else 90), 1.0))
         painter.setBrush(QBrush(QColor(acc.red(), acc.green(), acc.blue(), 45 if is_h_shot else 20)))
         painter.drawRoundedRect(self.btn_screenshot_rect, 12.0, 12.0)
-        draw_vector_camera(painter, self.btn_screenshot_rect.left() + 14.0, btn_y + 12.0, QColor(acc if is_h_shot else QColor(255, 255, 255, 220)), scale=0.8)
+        draw_vector_camera(painter, shot_x + 13.0, btn_y + 12.0, QColor(acc if is_h_shot else QColor(255, 255, 255, 220)), scale=0.8)
         painter.setPen(QColor(acc if is_h_shot else QColor(255, 255, 255, 220)))
         painter.setFont(QFont("Segoe UI", 7, QFont.Weight.Bold))
-        painter.drawText(QRectF(self.btn_screenshot_rect.left() + 20.0, btn_y, 56.0, btn_h), Qt.AlignmentFlag.AlignCenter, "Capture")
+        painter.drawText(QRectF(shot_x + 20.0, btn_y, shot_w - 24.0, btn_h), Qt.AlignmentFlag.AlignCenter, "Capture")
 
         # Ligne séparatrice
         painter.setPen(QPen(QColor(255, 255, 255, 20), 1.0))
@@ -2036,9 +2060,9 @@ class IslandWindow(QWidget):
 
         # 5. Corps principal : Deux Colonnes
         content_top = rect.top() + 48.0
-        col1_w = 415.0
-        col2_x = rect.left() + col1_w + 14.0
-        col2_w = rect.right() - col2_x - 16.0
+        col1_w = 445.0
+        col2_x = rect.left() + col1_w + 16.0
+        col2_w = rect.right() - col2_x - 18.0
 
         # Séparateur vertical entre colonnes
         painter.setPen(QPen(QColor(255, 255, 255, 18), 1.0))
