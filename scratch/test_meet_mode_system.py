@@ -7,7 +7,7 @@ from PyQt6.QtCore import Qt
 
 from island.settings_window import SettingsWindow, load_settings, save_settings
 from island.window import IslandWindow
-from island.meet_listener import MeetListener, is_teacher_question, resample_to_16k_mono
+from island.meet_listener import MeetListener, is_teacher_question, convert_loopback_to_16k_mono
 
 def test_meet_system():
     print("=== DÉBUT DU TEST DU SYSTÈME COMPLET MODE MEET ===")
@@ -20,13 +20,14 @@ def test_meet_system():
     assert is_teacher_question("pourquoi dit-on que le protocole ip est non connecte") is True
     assert is_teacher_question("qu'est-ce que vous remarquez sur ce schema") is True
     assert is_teacher_question("quelle est la commande pour lister les conteneurs") is True
+    assert is_teacher_question("qui peut me dire cest quoi une variables") is True
     assert is_teacher_question("on va maintenant etudier le routage dynamique") is False
     print("[1] Détection des questions du professeur : VALIDÉE")
 
     # 2. Test du rééchantillonnage audio
     import numpy as np
     raw_stereo_48k = np.zeros(48000 * 2, dtype=np.int16).tobytes()
-    resampled = resample_to_16k_mono(raw_stereo_48k, 48000, 2)
+    resampled = convert_loopback_to_16k_mono(raw_stereo_48k, 2, 48000)
     assert len(resampled) == 32000, f"Attendu 32000 octets, obtenu {len(resampled)}"
     print("[2] Rééchantillonnage 48kHz stéréo -> 16kHz mono : VALIDÉ")
 
