@@ -537,6 +537,20 @@ def query_agy_llm(user_query: str, timeout: int = 30, on_chunk: Optional[Callabl
 
     return ""
 
+def record_turn_all_memories(query: str, response: str, event_type: str = "chat", action: Optional[dict] = None):
+    """Consigne l'échange dans la session vivante d'Island et dans la mémoire persistante DeepTalk."""
+    try:
+        from island.session_manager import IslandSessionManager
+        IslandSessionManager.get_instance().record_turn(query, response, event_type=event_type, action=action)
+    except Exception as e:
+        print(f"[Brain] Erreur consignation session : {e}")
+
+    try:
+        from island.deeptalk import DeepTalk
+        DeepTalk.get_instance().record_turn(query, response)
+    except Exception as e:
+        print(f"[Brain] Erreur consignation DeepTalk : {e}")
+
 def generate_response(query: str, on_chunk: Optional[Callable[[str], None]] = None) -> str:
     """
     Moteur conversationnel et d'action ultra-rapide (<0.01s local, ~0.35s via NVIDIA NIM, fallback ACP).
@@ -559,14 +573,24 @@ def generate_response(query: str, on_chunk: Optional[Callable[[str], None]] = No
         except Exception:
             return "Discussion réinitialisée."
 
+    # 0.1 Demande de récapitulatif / jonctions de la session vivante (depuis le démarrage d'Island)
+    if any(w in q for w in [
+        "résume la session", "resume la session", "récapitule la session", "recapitule la session",
+        "qu'est-ce qu'on a fait", "qu est ce qu on a fait", "qu'avons-nous fait", "ce qu'on a fait",
+        "depuis le démarrage", "depuis le demarrage", "historique de la session", "bilan de la session"
+    ]):
+        try:
+            from island.session_manager import IslandSessionManager
+            ans = IslandSessionManager.get_instance().get_session_summary_answer()
+            record_turn_all_memories(query, ans, event_type="system")
+            return ans
+        except Exception:
+            pass
+
     # 1. Calculs mathématiques instantanés (0.001s)
     math_res = solve_instant_math(q)
     if math_res:
-        try:
-            from island.deeptalk import DeepTalk
-            DeepTalk.get_instance().record_turn(query, math_res)
-        except Exception:
-            pass
+        record_turn_all_memories(query, math_res, event_type="math")
         return math_res
 
     # 2. Salutations rapides (0.001s)
@@ -577,22 +601,14 @@ def generate_response(query: str, on_chunk: Optional[Callable[[str], None]] = No
             "Bonjour ! Que puis-je faire pour vous ?"
         ]
         chosen = random.choice(greetings)
-        try:
-            from island.deeptalk import DeepTalk
-            DeepTalk.get_instance().record_turn(query, chosen)
-        except Exception:
-            pass
+        record_turn_all_memories(query, chosen, event_type="chat")
         return chosen
 
     # 3. Heure exacte locale (0.001s)
     if any(w in q for w in ["heure", "quelle heure"]):
         now = datetime.datetime.now()
         ans = f"Il est actuellement {now.strftime('%Hh%M')}."
-        try:
-            from island.deeptalk import DeepTalk
-            DeepTalk.get_instance().record_turn(query, ans)
-        except Exception:
-            pass
+        record_turn_all_memories(query, ans, event_type="chat")
         return ans
 
     # 4. Date exacte locale (0.001s)
@@ -601,40 +617,24 @@ def generate_response(query: str, on_chunk: Optional[Callable[[str], None]] = No
         jours = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"]
         now = datetime.datetime.now()
         ans = f"Nous sommes le {jours[now.weekday()]} {now.day} {mois[now.month - 1]} {now.year}."
-        try:
-            from island.deeptalk import DeepTalk
-            DeepTalk.get_instance().record_turn(query, ans)
-        except Exception:
-            pass
+        record_turn_all_memories(query, ans, event_type="chat")
         return ans
 
     # 5. Identité & Capacité (0.001s)
     if any(w in q for w in ["qui es-tu", "qui es tu", "c'est quoi cette encoche", "t'es qui"]):
-        ans = "Je suis Antigravity Island : votre Dynamic Island intelligente sur Windows avec mémoire persistante DeepTalk."
-        try:
-            from island.deeptalk import DeepTalk
-            DeepTalk.get_instance().record_turn(query, ans)
-        except Exception:
-            pass
+        ans = "Je suis Antigravity Island : votre Dynamic Island intelligente sur Windows avec mémoire persistante DeepTalk et session vivante."
+        record_turn_all_memories(query, ans, event_type="chat")
         return ans
 
     if any(w in q for w in ["que sais-tu faire", "que peux-tu faire", "aide-moi", "fonctionnalités"]):
-        ans = "Je contrôle votre PC (ouvrir, écrire, cliquer), surveille vos notifications et mémorise nos échanges avec DeepTalk."
-        try:
-            from island.deeptalk import DeepTalk
-            DeepTalk.get_instance().record_turn(query, ans)
-        except Exception:
-            pass
+        ans = "Je contrôle votre PC (ouvrir, écrire, cliquer), surveille vos notifications et mémorise nos échanges avec DeepTalk et le gestionnaire de session."
+        record_turn_all_memories(query, ans, event_type="chat")
         return ans
 
     # 6. État / Forme (0.001s)
     if any(w in q for w in ["comment vas-tu", "comment ca va", "ca va", "ça va", "tu vas bien"]) and len(q.split()) <= 4:
         ans = "Je fonctionne parfaitement ! Prêt pour vos requêtes."
-        try:
-            from island.deeptalk import DeepTalk
-            DeepTalk.get_instance().record_turn(query, ans)
-        except Exception:
-            pass
+        record_turn_all_memories(query, ans, event_type="chat")
         return ans
 
     # 7. Blague rapide (0.001s)
@@ -645,22 +645,14 @@ def generate_response(query: str, on_chunk: Optional[Callable[[str], None]] = No
             "Que fait un geek quand il a froid ? Il se met près du pare-feu !"
         ]
         chosen = random.choice(jokes)
-        try:
-            from island.deeptalk import DeepTalk
-            DeepTalk.get_instance().record_turn(query, chosen)
-        except Exception:
-            pass
+        record_turn_all_memories(query, chosen, event_type="chat")
         return chosen
 
     # 8. Contrôle et Automatisation Desktop (Action immédiate en <0.02s)
     desktop_res = DesktopController.execute_intent(query)
     if desktop_res:
         success, msg = desktop_res
-        try:
-            from island.deeptalk import DeepTalk
-            DeepTalk.get_instance().record_turn(query, msg)
-        except Exception:
-            pass
+        record_turn_all_memories(query, msg, event_type="action", action={"intent": query, "result": msg})
         return msg
 
     # 8.1 Boucle Récursive Harness² (Propose-Probe-Compose) & Mémoire RAG Fichiers (<0.01s)
@@ -669,11 +661,7 @@ def generate_response(query: str, on_chunk: Optional[Callable[[str], None]] = No
         harness_res = HarnessEngine.get_instance().execute_recursive(query)
         if harness_res:
             success, msg = harness_res
-            try:
-                from island.deeptalk import DeepTalk
-                DeepTalk.get_instance().record_turn(query, msg)
-            except Exception:
-                pass
+            record_turn_all_memories(query, msg, event_type="harness")
             return msg
     except Exception as e:
         print(f"[Brain Harness²] Exception : {e}")
@@ -735,11 +723,7 @@ def generate_response(query: str, on_chunk: Optional[Callable[[str], None]] = No
     if is_vision_query:
         vis_res = query_vision_model(query, on_chunk=on_chunk)
         if vis_res:
-            try:
-                from island.deeptalk import DeepTalk
-                DeepTalk.get_instance().record_turn(query, vis_res)
-            except Exception:
-                pass
+            record_turn_all_memories(query, vis_res, event_type="vision")
             return vis_res
 
     # 10. Moteur LLM sélectionné (Agnes AI 3.0 Flash par défaut, NVIDIA NIM ou Antigravity CLI ACP)
@@ -754,17 +738,32 @@ def generate_response(query: str, on_chunk: Optional[Callable[[str], None]] = No
     except Exception:
         pass
 
+    # Injection du contexte de Session vivante et des Jonctions Contextuelles
+    session_junction_prompt = ""
+    try:
+        from island.session_manager import IslandSessionManager
+        session_junction_prompt = IslandSessionManager.get_instance().get_junction_prompt(query)
+    except Exception as e:
+        print(f"[Brain Session Junction] Erreur génération jonction : {e}")
+
     effective_query = f"{harness_context}\n\n{query}" if harness_context else query
 
-    # Préparation du contexte multi-tours DeepTalk avec Savoir, Compétences et Contexte Temps Réel
-    multi_turn_messages = None
+    # Préparation du prompt système enrichi (Savoirs, Harness² et Jonctions de session)
     unified_prompt = get_unified_system_prompt(is_vision=False)
-    system_prompt_with_harness = f"{unified_prompt}\n\n{harness_context}" if harness_context else unified_prompt
+    system_parts = [unified_prompt]
+    if harness_context:
+        system_parts.append(harness_context)
+    if session_junction_prompt:
+        system_parts.append(session_junction_prompt)
+    system_prompt_with_context = "\n\n".join(system_parts)
+
+    # Préparation du contexte multi-tours pour les API de complétion
+    multi_turn_messages = None
     try:
         from island.deeptalk import DeepTalk
         multi_turn_messages = DeepTalk.get_instance().get_messages_for_llm(
             current_query=query,
-            system_prompt=system_prompt_with_harness
+            system_prompt=system_prompt_with_context
         )
     except Exception as e:
         print(f"[Brain DeepTalk] Erreur chargement contexte : {e}")
@@ -777,11 +776,17 @@ def generate_response(query: str, on_chunk: Optional[Callable[[str], None]] = No
     except Exception:
         pass
 
-    effective_text_query = f"{conversation_summary}\n\n{effective_query}" if conversation_summary else effective_query
+    full_context_blocks = []
+    if session_junction_prompt:
+        full_context_blocks.append(session_junction_prompt)
+    if conversation_summary:
+        full_context_blocks.append(conversation_summary)
+    full_context_blocks.append(effective_query)
+    effective_text_query = "\n\n".join(full_context_blocks)
 
     raw_resp = ""
     if provider == "gemini":
-        raw_resp = query_gemini_api(effective_text_query, system_prompt=system_prompt_with_harness, on_chunk=on_chunk)
+        raw_resp = query_gemini_api(effective_text_query, system_prompt=system_prompt_with_context, on_chunk=on_chunk)
         if not raw_resp:
             print("[Brain] Repli sur Agnes AI...")
             raw_resp = query_agnes_ai(effective_query, messages=multi_turn_messages, timeout=12, on_chunk=on_chunk)
@@ -796,19 +801,21 @@ def generate_response(query: str, on_chunk: Optional[Callable[[str], None]] = No
             print("[Brain] Repli sur Agnes AI...")
             raw_resp = query_agnes_ai(effective_query, messages=multi_turn_messages, timeout=12, on_chunk=on_chunk)
     else:
-        raw_resp = query_agy_llm(effective_query, timeout=35, on_chunk=on_chunk, conversation_history=conversation_summary)
+        raw_resp = query_agy_llm(effective_query, timeout=35, on_chunk=on_chunk, conversation_history=effective_text_query)
         if not raw_resp:
             print("[Brain] Repli sur Agnes AI...")
             raw_resp = query_agnes_ai(effective_query, messages=multi_turn_messages, timeout=12, on_chunk=on_chunk)
 
     if raw_resp:
         final_answer = raw_resp
+        action_recorded = None
         # Vérification si le LLM a déclenché une action d'agent Computer-Use
         agent_call = parse_agent_action(raw_resp)
         if agent_call and "action" in agent_call:
             act_name = agent_call["action"]
             act_params = agent_call.get("params", {})
             say_msg = agent_call.get("say", "")
+            action_recorded = {"action": act_name, "params": act_params}
             print(f"[Brain Agent Action] Action déclenchée par LLM : {act_name} avec {act_params}")
             success, res_msg = DesktopController.execute_action(act_name, act_params)
 
@@ -831,19 +838,16 @@ def generate_response(query: str, on_chunk: Optional[Callable[[str], None]] = No
             else:
                 final_answer = res_msg
 
-        # Enregistrement dans DeepTalk
-        try:
-            from island.deeptalk import DeepTalk
-            DeepTalk.get_instance().record_turn(query, final_answer)
-        except Exception as e:
-            print(f"[Brain DeepTalk] Erreur record_turn : {e}")
+        # Enregistrement synchronisé dans la Session active et dans DeepTalk
+        record_turn_all_memories(
+            query=query,
+            response=final_answer,
+            event_type="action" if action_recorded else "chat",
+            action=action_recorded
+        )
 
         return final_answer
 
     fallback_msg = f"Bien reçu : « {query} ». Je reste à vos côtés."
-    try:
-        from island.deeptalk import DeepTalk
-        DeepTalk.get_instance().record_turn(query, fallback_msg)
-    except Exception:
-        pass
+    record_turn_all_memories(query, fallback_msg, event_type="fallback")
     return fallback_msg

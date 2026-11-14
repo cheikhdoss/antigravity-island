@@ -111,6 +111,12 @@ def main():
     app.setQuitOnLastWindowClosed(False)
     trace("Step: QApplication created")
 
+    # 0. Initialisation de la session vivante (depuis le démarrage d'Island jusqu'à sa fermeture/redémarrage)
+    from island.session_manager import IslandSessionManager
+    session_mgr = IslandSessionManager.get_instance()
+    session_id = session_mgr.start_session()
+    trace(f"Step: IslandLiveSession started ({session_id})")
+
     # 1. Charger les réglages
     user_settings = load_settings()
     trace("Step: load_settings done")
@@ -127,7 +133,8 @@ def main():
     island.settings_window = control_center
     trace("Step: SettingsWindow created")
 
-    # Sauvegarde garantie en cas d'arrêt de l'application
+    # Sauvegarde garantie et clôture propre de la session en cas d'arrêt ou redémarrage de l'application
+    app.aboutToQuit.connect(lambda: session_mgr.close_session())
     app.aboutToQuit.connect(lambda: save_settings(control_center.settings))
     app.aboutToQuit.connect(lambda: AgyDaemon.get_instance().stop())
 
