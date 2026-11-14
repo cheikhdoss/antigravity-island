@@ -5,7 +5,7 @@ from PyQt6.QtCore import (
 )
 from PyQt6.QtWidgets import QWidget, QApplication, QMenu, QLineEdit
 from PyQt6.QtGui import (
-    QPainter, QColor, QPen, QBrush, QFont, QLinearGradient, QPainterPath, QRadialGradient
+    QPainter, QColor, QPen, QBrush, QFont, QFontMetrics, QLinearGradient, QPainterPath, QRadialGradient
 )
 
 from island.config import Config
@@ -447,16 +447,7 @@ class IslandWindow(QWidget):
         self.thinking_watchdog.setSingleShot(True)
         self.thinking_watchdog.timeout.connect(lambda: self.current_state == "thinking" and self.set_state("idle"))
 
-        # Gestion du défilement (scrolling) pour les réponses longues (état speaking)
-        self.speaking_scroll_y = 0.0
-        self.speaking_max_scroll = 0.0
-        self.speaking_total_content_h = 0.0
-        self.speaking_viewport_rect = QRectF()
-        self.speaking_scrollbar_rect = QRectF()
-        self.speaking_is_dragging_sb = False
-        self.speaking_drag_start_y = 0.0
-        self.speaking_drag_start_scroll = 0.0
-        self.speaking_thumb_h = 22.0
+        # Bouton fermer en état speaking
         self.btn_close_speaking_rect = QRectF()
 
         self.state_change_requested.connect(self.apply_remote_command)
@@ -676,13 +667,60 @@ class IslandWindow(QWidget):
         import threading
         threading.Thread(target=worker, daemon=True).start()
 
+    def _compute_speaking_geometry(self, text: str) -> tuple[float, float, float]:
+        """Calcule dynamiquement la largeur, hauteur et rayon de l'Island selon la quantité exacte d'output LLM.
+        Zéro zone scrollable : l'Island grandit et s'adapte à 100% au texte généré pour un affichage intégral."""
+        screens = QApplication.screens()
+        if screens and 0 <= self.screen_index < len(screens):
+            screen = screens[self.screen_index]
+        else:
+            screen = QApplication.primaryScreen()
+        screen_geo = screen.geometry() if screen else None
+        screen_w = float(screen_geo.width()) if screen_geo else 1280.0
+        screen_h = float(screen_geo.height()) if screen_geo else 720.0
+
+        txt = (text or "").strip()
+        length = len(txt)
+
+        # 1. Largeur adaptative intelligente selon la quantité de texte
+        if length < 80:
+            target_w = 480.0
+        elif length < 250:
+            target_w = 540.0
+        elif length < 550:
+            target_w = 600.0
+        else:
+            # Réponse longue (listes, paragraphes, code) : largeur confortable style Apple Modal
+            target_w = min(680.0, max(540.0, screen_w * 0.58))
+
+        # 2. Mesure exacte de la hauteur du texte avec word wrap
+        font_msg = QFont("Segoe UI", 10, QFont.Weight.Normal)
+        fm = QFontMetrics(font_msg)
+        avail_w = int(target_w - 56.0)
+        rect_text = fm.boundingRect(0, 0, max(100, avail_w), 50000, int(Qt.TextFlag.TextWordWrap), txt)
+        text_h = float(rect_text.height())
+
+        # 3. Hauteur totale nécessaire : En-tête (32px) + Texte + Marge basse (24px)
+        needed_h = 32.0 + text_h + 24.0
+        min_h = 88.0
+
+        # Garde-fou écran : ne jamais déborder hors de l'écran en bas (laisser une marge de sécurité)
+        max_screen_h = max(min_h, screen_h - float(getattr(self, "top_margin", 12.0)) - 36.0)
+        target_h = max(min_h, min(max_screen_h, needed_h))
+
+        # Rayon harmonieux (capsule pour les petits textes, arrondi doux pour les cartes étendues)
+        target_r = min(28.0, target_h / 2.0)
+
+        return float(target_w), float(target_h), float(target_r)
+
     def set_state(self, state_name: str, payload: dict = None):
         if state_name not in Config.STATES:
             return
 
-        # Éviter les saccades si l'état cible est déjà actif et en cours d'animation
+        # Éviter les saccades si l'état cible est déjà actif et en cours d'animation (sauf si speaking car le texte a pu évoluer)
         if state_name == self.current_state and self.anim.state() == QVariantAnimation.State.Running:
-            return
+            if state_name != "speaking":
+                return
             
         self.current_state = state_name
 
@@ -731,33 +769,11 @@ class IslandWindow(QWidget):
             self.btn_meet_hub_rect = QRectF()
             self.btn_expand_rect = QRectF()
         elif state_name == "speaking":
-            target_cfg = Config.STATES[state_name]
-            # Calcul dynamique et adaptatif de la hauteur pour une lisibilité parfaite
-            font_msg = QFont("Segoe UI", 10, QFont.Weight.Normal)
-            from PyQt6.QtGui import QFontMetrics
-            fm = QFontMetrics(font_msg)
-            avail_w = int(target_cfg.width - 56)
-            rect_text = fm.boundingRect(0, 0, avail_w, 25000, int(Qt.TextFlag.TextWordWrap), self.message_text)
-            text_h = float(rect_text.height())
-            
-            # Hauteur totale nécessaire : En-tête (28px) + Texte + Marge basse (20px)
-            needed_h = 28.0 + text_h + 20.0
-            
-            # Expansion visuelle ergonomique sur l'écran (jusqu'à 320px pour ne pas masquer tout l'écran)
-            screen = QApplication.primaryScreen()
-            screen_h = screen.geometry().height() if screen else 1080
-            max_card_h = min(320.0, max(240.0, screen_h * 0.40))
-            
-            self.target_w = float(target_cfg.width)
-            self.target_h = max(float(target_cfg.height), min(float(max_card_h), float(needed_h)))
-            self.target_r = 26.0
-
-            # Calcul du défilement (scrolling) si le texte dépasse la hauteur visible
-            visible_content_h = max(10.0, self.target_h - 28.0 - 20.0)
-            self.speaking_total_content_h = text_h
-            self.speaking_max_scroll = max(0.0, text_h - visible_content_h)
-            self.speaking_scroll_y = 0.0
-            self.speaking_is_dragging_sb = False
+            # Adaptation intégrale à la quantité d'output du LLM (zéro zone scrollable)
+            w, h, r = self._compute_speaking_geometry(self.message_text)
+            self.target_w = w
+            self.target_h = h
+            self.target_r = r
         elif state_name == "prompt_input":
             target_cfg = Config.STATES[state_name]
             self.target_w = float(target_cfg.width)
@@ -1004,20 +1020,19 @@ class IslandWindow(QWidget):
             if self.current_state != "speaking":
                 self.set_state("speaking", data)
             else:
-                target_cfg = Config.STATES["speaking"]
-                font_msg = QFont("Segoe UI", 10, QFont.Weight.Normal)
-                from PyQt6.QtGui import QFontMetrics
-                fm = QFontMetrics(font_msg)
-                avail_w = int(target_cfg.width - 56)
-                rect_text = fm.boundingRect(0, 0, avail_w, 25000, int(Qt.TextFlag.TextWordWrap), self.message_text)
-                needed_h = 28.0 + float(rect_text.height()) + 20.0
-                screen = QApplication.primaryScreen()
-                screen_h = screen.geometry().height() if screen else 1080
-                max_card_h = min(320.0, max(240.0, screen_h * 0.40))
-                new_h = max(float(target_cfg.height), min(float(max_card_h), float(needed_h)))
-                if new_h > self.target_h and self.anim.state() != QVariantAnimation.State.Running:
+                w, h, r = self._compute_speaking_geometry(self.message_text)
+                if abs(h - self.target_h) >= 8.0 or abs(w - self.target_w) >= 16.0:
+                    self.start_w = self.cur_w
                     self.start_h = self.cur_h
-                    self.target_h = new_h
+                    self.start_r = self.cur_r
+                    self.target_w = w
+                    self.target_h = h
+                    self.target_r = r
+                    self.anim.stop()
+                    self.anim.setEasingCurve(QEasingCurve.Type.OutQuad)
+                    self.anim.setDuration(160)
+                    self.anim.setStartValue(0.0)
+                    self.anim.setEndValue(1.0)
                     self.anim.start()
             self.update()
         elif action == "speak":
@@ -1093,19 +1108,6 @@ class IslandWindow(QWidget):
                 self.notif_mgr.prev()
             self.notif_timer.start(7500)  # Réinitialise la durée d'affichage au scroll
             self.update()
-        elif self.current_state == "speaking" and getattr(self, "speaking_max_scroll", 0.0) > 0:
-            p_delta = event.pixelDelta().y()
-            if p_delta != 0:
-                scroll_delta = -float(p_delta)
-            else:
-                y_delta = event.angleDelta().y()
-                scroll_delta = -(y_delta / 120.0) * 45.0
-            
-            prev_scroll = self.speaking_scroll_y
-            self.speaking_scroll_y = max(0.0, min(self.speaking_max_scroll, self.speaking_scroll_y + scroll_delta))
-            if self.speaking_scroll_y != prev_scroll:
-                self.update()
-            event.accept()
 
     def _check_open_windows(self):
         try:
@@ -1180,18 +1182,6 @@ class IslandWindow(QWidget):
         super().mouseMoveEvent(event)
         pos = event.position()
         self.leave_debounce_timer.stop()
-
-        # Glissement de la barre de défilement (drag scrollbar) en état speaking
-        if self.current_state == "speaking" and getattr(self, "speaking_is_dragging_sb", False):
-            dy = pos.y() - self.speaking_drag_start_y
-            sb_rect = getattr(self, "speaking_scrollbar_rect", QRectF())
-            thumb_h = getattr(self, "speaking_thumb_h", 22.0)
-            track_avail = sb_rect.height() - thumb_h
-            if track_avail > 0 and self.speaking_max_scroll > 0:
-                delta_scroll = (dy / track_avail) * self.speaking_max_scroll
-                self.speaking_scroll_y = max(0.0, min(self.speaking_max_scroll, self.speaking_drag_start_scroll + delta_scroll))
-                self.update()
-            return
 
         prev_action_btn = self.hovered_action_btn
         if self.current_state == "control_hub":
@@ -1293,8 +1283,6 @@ class IslandWindow(QWidget):
                 self.update()
 
     def mouseReleaseEvent(self, event):
-        if getattr(self, "speaking_is_dragging_sb", False):
-            self.speaking_is_dragging_sb = False
         super().mouseReleaseEvent(event)
 
     def keyPressEvent(self, event):
@@ -1424,22 +1412,7 @@ class IslandWindow(QWidget):
                     return
 
             elif self.current_state == "speaking":
-                # 1. Clic sur le bouton Fermer (✕ Fermer)
-                if getattr(self, "btn_close_speaking_rect", QRectF()).contains(pos):
-                    self.set_state("idle")
-                    return
-                # 2. Clic sur la barre de défilement pour initier le glisser (drag)
-                sb_rect = getattr(self, "speaking_scrollbar_rect", QRectF())
-                if sb_rect.isValid() and sb_rect.contains(pos):
-                    self.speaking_is_dragging_sb = True
-                    self.speaking_drag_start_y = pos.y()
-                    self.speaking_drag_start_scroll = self.speaking_scroll_y
-                    return
-                # 3. Si le texte est scrollable et qu'on clique dans la zone de texte : ne pas fermer brusquement
-                viewport = getattr(self, "speaking_viewport_rect", QRectF())
-                if getattr(self, "speaking_max_scroll", 0.0) > 0 and viewport.contains(pos):
-                    return
-                # 4. Clic sur le reste de la carte (fond, encoche) -> Fermeture propre
+                # Clic sur le bouton Fermer (✕ Fermer) ou sur le fond pour fermer
                 self.set_state("idle")
                 return
 
@@ -1689,71 +1662,21 @@ class IslandWindow(QWidget):
                 "✕ Fermer"
             )
 
-        # Définition du Viewport scrollable pour le texte
-        content_top = header_y + 12.0
-        content_bottom = rect.bottom() - 16.0
-        viewport_w = rect.width() - 56.0
-        viewport_h = max(10.0, content_bottom - content_top)
-        viewport_rect = QRectF(rect.left() + 24.0, content_top, viewport_w, viewport_h)
-        self.speaking_viewport_rect = viewport_rect
+        # Rendu direct et intégral du texte sans zone scrollable (l'Island est dimensionné pour tout afficher)
+        text_top = header_y + 14.0
+        text_avail_w = max(100.0, rect.width() - 56.0)
+        text_avail_h = max(20.0, rect.bottom() - text_top - 16.0)
+        text_rect = QRectF(rect.left() + 28.0, text_top, text_avail_w, text_avail_h)
 
         painter.setPen(Config.COLOR_TEXT_PRIMARY)
         font_msg = QFont("Segoe UI", 10, QFont.Weight.Normal)
         painter.setFont(font_msg)
 
-        from PyQt6.QtGui import QFontMetrics
-        fm = QFontMetrics(font_msg)
-        rect_text = fm.boundingRect(0, 0, int(viewport_w), 25000, int(Qt.TextFlag.TextWordWrap), self.message_text)
-        total_text_h = float(rect_text.height())
-        self.speaking_total_content_h = total_text_h
-        self.speaking_max_scroll = max(0.0, total_text_h - viewport_h)
-
-        # Sécuriser les limites du scroll en cas de redimensionnement dynamique
-        if self.speaking_scroll_y > self.speaking_max_scroll:
-            self.speaking_scroll_y = self.speaking_max_scroll
-
-        # Rendu du texte avec clipping strict à l'intérieur du viewport
-        painter.save()
-        painter.setClipRect(viewport_rect)
-        
-        text_target_rect = QRectF(
-            viewport_rect.left(),
-            viewport_rect.top() - self.speaking_scroll_y,
-            viewport_w,
-            total_text_h + 30.0
-        )
         painter.drawText(
-            text_target_rect,
+            text_rect,
             Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft | Qt.TextFlag.TextWordWrap,
             self.message_text
         )
-        painter.restore()
-
-        # Barre de défilement discrète & élégante (Apple Dynamic Island Obsidian)
-        if self.speaking_max_scroll > 0:
-            sb_x = rect.right() - 14.0
-            sb_w = 3.5
-            sb_top = viewport_rect.top() + 2.0
-            sb_h = max(20.0, viewport_h - 4.0)
-            self.speaking_scrollbar_rect = QRectF(sb_x - 5.0, sb_top, sb_w + 10.0, sb_h)
-
-            # Piste
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(QBrush(QColor(255, 255, 255, 25)))
-            painter.drawRoundedRect(QRectF(sb_x, sb_top, sb_w, sb_h), 1.75, 1.75)
-
-            # Curseur (Thumb)
-            ratio = viewport_h / max(viewport_h + 1.0, total_text_h)
-            thumb_h = max(22.0, min(sb_h, sb_h * ratio))
-            self.speaking_thumb_h = thumb_h
-
-            scroll_pct = self.speaking_scroll_y / self.speaking_max_scroll if self.speaking_max_scroll > 0 else 0.0
-            thumb_y = sb_top + scroll_pct * (sb_h - thumb_h)
-
-            painter.setBrush(QBrush(QColor(255, 255, 255, 150)))
-            painter.drawRoundedRect(QRectF(sb_x, thumb_y, sb_w, thumb_h), 1.75, 1.75)
-        else:
-            self.speaking_scrollbar_rect = QRectF()
 
     def _draw_action_content(self, painter: QPainter, rect: QRectF):
         top_y = rect.top() + 16.0
