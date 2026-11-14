@@ -512,8 +512,48 @@ class IslandWindow(QWidget):
         self._update_geometry()
         self.update()
 
+    def ensure_topmost(self):
+        """
+        Maintient l'encoche au premier plan absolu (HWND_TOPMOST + WS_EX_NOACTIVATE).
+        Empêche catégoriquement toute nouvelle fenêtre (navigateur, explorateur, IDE, etc.)
+        de faire passer Antigravity Island au second plan lors de son ouverture ou de son focus.
+        """
+        try:
+            import ctypes
+            hwnd = int(self.winId())
+            user32 = ctypes.windll.user32
+
+            # 1. Styles étendus : TopMost + ToolWindow + NoActivate
+            GWL_EXSTYLE = -20
+            WS_EX_TOPMOST = 0x00000008
+            WS_EX_TOOLWINDOW = 0x00000080
+            WS_EX_NOACTIVATE = 0x08000000
+
+            cur_ex = user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+            needed_ex = cur_ex | WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE
+            if cur_ex != needed_ex:
+                user32.SetWindowLongW(hwnd, GWL_EXSTYLE, needed_ex)
+
+            # 2. Positionnement Z-Order absolu en tête de liste
+            HWND_TOPMOST = -1
+            SWP_NOMOVE = 0x0002
+            SWP_NOSIZE = 0x0001
+            SWP_NOACTIVATE = 0x0010
+            SWP_FRAMECHANGED = 0x0020
+            SWP_SHOWWINDOW = 0x0040
+
+            user32.SetWindowPos(
+                hwnd,
+                HWND_TOPMOST,
+                0, 0, 0, 0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_FRAMECHANGED | SWP_SHOWWINDOW
+            )
+        except Exception:
+            pass
+
     def showEvent(self, event):
         super().showEvent(event)
+        self.ensure_topmost()
         if getattr(self, "hide_on_screen_share", True):
             self.apply_stealth_mode(True)
 
@@ -541,6 +581,8 @@ class IslandWindow(QWidget):
 
             if is_layered:
                 user32.SetWindowLongW(hwnd, GWL_EXSTYLE, ex)
+
+            self.ensure_topmost()
 
             self.stealth_active = enabled if res else False
             if hasattr(self, "pointer") and self.pointer:
@@ -925,12 +967,28 @@ class IslandWindow(QWidget):
             y = screen_geo.y() + self.top_margin
         
         self.setGeometry(x, y, total_w, total_h)
+        self.ensure_topmost()
 
     def _on_tick(self):
         if self.current_state in ["listening", "speaking"]:
             self.waveform.update(delta=0.04, audio_power=self.audio_power)
         elif self.current_state == "thinking":
             self.orb.update(delta=0.04)
+
+        # Maintien permanent au premier plan lors de l'ouverture ou du focus de nouvelles fenêtres
+        if not hasattr(self, "_tick_counter"):
+            self._tick_counter = 0
+            self._last_fg_hwnd = 0
+        self._tick_counter += 1
+        if self._tick_counter % 30 == 0:  # Vérification périodique toutes les ~500ms
+            try:
+                import ctypes
+                cur_fg = ctypes.windll.user32.GetForegroundWindow()
+                if cur_fg != self._last_fg_hwnd:
+                    self._last_fg_hwnd = cur_fg
+                    self.ensure_topmost()
+            except Exception:
+                pass
 
         self.update()
 
