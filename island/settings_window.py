@@ -216,6 +216,34 @@ class SettingsWindow(QWidget):
             QComboBox:focus {
                 border-color: #38bdf8;
             }
+            QComboBox:disabled {
+                background-color: #0b1120;
+                border: 1px solid #1e293b;
+                color: #475569;
+            }
+            QComboBox::drop-down:disabled {
+                border-left: 1px solid #1e293b;
+                background-color: #0b1120;
+            }
+            QComboBox::down-arrow:disabled {
+                border-top: 5px solid #334155;
+            }
+            QLineEdit {
+                background-color: #1e293b;
+                border: 1px solid #475569;
+                border-radius: 6px;
+                padding: 6px 12px;
+                color: #ffffff;
+                font-size: 12px;
+            }
+            QLineEdit:disabled {
+                background-color: #0b1120;
+                border: 1px solid #1e293b;
+                color: #475569;
+            }
+            QLabel:disabled {
+                color: #475569;
+            }
             QComboBox::drop-down {
                 subcontrol-origin: padding;
                 subcontrol-position: top right;
@@ -608,9 +636,15 @@ class SettingsWindow(QWidget):
         row_llm.addWidget(self.combo_llm)
         layout_ai.addLayout(row_llm)
 
+        # Indicateur visuel du modèle d'IA actif en temps réel
+        self.lbl_llm_status = QLabel()
+        self.lbl_llm_status.setStyleSheet("color: #38bdf8; font-size: 11px; font-weight: 600; padding: 5px 10px; background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.22); border-radius: 6px; margin-top: 2px; margin-bottom: 4px;")
+        layout_ai.addWidget(self.lbl_llm_status)
+
         # Modèle NVIDIA NIM (5 modèles rapides & intelligents benchmarkés)
         row_nim_model = QHBoxLayout()
-        row_nim_model.addWidget(QLabel("Modèle NVIDIA NIM :"))
+        self.lbl_nim_model = QLabel("Modèle NVIDIA NIM :")
+        row_nim_model.addWidget(self.lbl_nim_model)
         row_nim_model.addStretch()
         self.combo_nim_model = QComboBox()
         self.combo_nim_model.blockSignals(True)
@@ -631,7 +665,8 @@ class SettingsWindow(QWidget):
 
         # Modèle Antigravity AGY ACP
         row_agy_model = QHBoxLayout()
-        row_agy_model.addWidget(QLabel("Modèle Antigravity AGY :"))
+        self.lbl_agy_model = QLabel("Modèle Antigravity AGY :")
+        row_agy_model.addWidget(self.lbl_agy_model)
         row_agy_model.addStretch()
         self.combo_agy_model = QComboBox()
         self.combo_agy_model.blockSignals(True)
@@ -651,7 +686,8 @@ class SettingsWindow(QWidget):
 
         # Niveau de réflexion AGY (Thought Level)
         row_agy_thought = QHBoxLayout()
-        row_agy_thought.addWidget(QLabel("Réflexion AGY (Thought Level) :"))
+        self.lbl_agy_thought = QLabel("Réflexion AGY (Thought Level) :")
+        row_agy_thought.addWidget(self.lbl_agy_thought)
         row_agy_thought.addStretch()
         self.combo_agy_thought = QComboBox()
         self.combo_agy_thought.blockSignals(True)
@@ -670,7 +706,8 @@ class SettingsWindow(QWidget):
 
         # Modèle Vision & Analyse d'écran
         row_vision = QHBoxLayout()
-        row_vision.addWidget(QLabel("Vision & Analyse Écran :"))
+        self.lbl_vision = QLabel("Vision & Analyse Écran :")
+        row_vision.addWidget(self.lbl_vision)
         row_vision.addStretch()
         self.combo_vision = QComboBox()
         self.combo_vision.blockSignals(True)
@@ -691,7 +728,8 @@ class SettingsWindow(QWidget):
 
         # Clé API Google Gemini (optionnelle pour Gemini Direct)
         row_gemini_key = QHBoxLayout()
-        row_gemini_key.addWidget(QLabel("Clé Google Gemini (Direct) :"))
+        self.lbl_gemini_key = QLabel("Clé Google Gemini (Direct) :")
+        row_gemini_key.addWidget(self.lbl_gemini_key)
         self.txt_gemini_key = QLineEdit()
         self.txt_gemini_key.setEchoMode(QLineEdit.EchoMode.Password)
         self.txt_gemini_key.setPlaceholderText("AIzaSy... (laisser vide si non utilisé)")
@@ -909,6 +947,8 @@ class SettingsWindow(QWidget):
         footer_layout.addWidget(quit_btn)
         main_layout.addLayout(footer_layout)
 
+        self._update_ai_fields_state()
+
     def showEvent(self, event):
         """Applique l'invisibilité en capture d'écran si activée."""
         super().showEvent(event)
@@ -1015,11 +1055,58 @@ class SettingsWindow(QWidget):
         self.settings_changed.emit(self.settings)
         self._flash_saved()
 
+    def _update_ai_fields_state(self):
+        """Met à jour l'état actif/inactif des modèles d'IA selon le fournisseur sélectionné."""
+        if not hasattr(self, "combo_llm"):
+            return
+
+        provider = self.combo_llm.currentData() or "agnes"
+
+        # 1. Modèle NVIDIA NIM (actif uniquement si provider == "nim")
+        is_nim = (provider == "nim")
+        if hasattr(self, "lbl_nim_model"):
+            self.lbl_nim_model.setEnabled(is_nim)
+        if hasattr(self, "combo_nim_model"):
+            self.combo_nim_model.setEnabled(is_nim)
+
+        # 2. Modèle Antigravity AGY & Réflexion (actifs uniquement si provider == "agy")
+        is_agy = (provider == "agy")
+        if hasattr(self, "lbl_agy_model"):
+            self.lbl_agy_model.setEnabled(is_agy)
+        if hasattr(self, "combo_agy_model"):
+            self.combo_agy_model.setEnabled(is_agy)
+        if hasattr(self, "lbl_agy_thought"):
+            self.lbl_agy_thought.setEnabled(is_agy)
+        if hasattr(self, "combo_agy_thought"):
+            self.combo_agy_thought.setEnabled(is_agy)
+
+        # 3. Clé Gemini Direct (active si provider == "gemini" ou si vision == "gemini_vl")
+        vis_provider = self.combo_vision.currentData() if hasattr(self, "combo_vision") else ""
+        is_gemini = (provider == "gemini" or vis_provider == "gemini_vl")
+        if hasattr(self, "lbl_gemini_key"):
+            self.lbl_gemini_key.setEnabled(is_gemini)
+        if hasattr(self, "txt_gemini_key"):
+            self.txt_gemini_key.setEnabled(is_gemini)
+
+        # 4. Message de statut explicite en temps réel
+        if hasattr(self, "lbl_llm_status"):
+            if provider == "agnes":
+                self.lbl_llm_status.setText("🟢 Modèle actif : Agnes AI 3.0 Flash (~0.8s • Répond à toutes vos requêtes)")
+            elif provider == "nim":
+                model_short = self.combo_nim_model.currentText().split(" (")[0]
+                self.lbl_llm_status.setText(f"🟢 Modèle actif : NVIDIA NIM -> {model_short}")
+            elif provider == "agy":
+                model_short = self.combo_agy_model.currentText().split(" (")[0]
+                self.lbl_llm_status.setText(f"🟢 Modèle actif : Antigravity AGY -> {model_short} (Local)")
+            elif provider == "gemini":
+                self.lbl_llm_status.setText("🟢 Modèle actif : Google DeepMind Gemini 2.5 Flash Direct (<0.9s)")
+
     def _on_llm_provider_changed(self, idx: int):
         p = self.combo_llm.currentData()
         self.settings["llm_provider"] = p
         save_settings(self.settings)
         self.settings_changed.emit(self.settings)
+        self._update_ai_fields_state()
         self._flash_saved()
 
     def _on_nim_model_changed(self, idx: int):
@@ -1027,6 +1114,7 @@ class SettingsWindow(QWidget):
         self.settings["nim_model"] = m
         save_settings(self.settings)
         self.settings_changed.emit(self.settings)
+        self._update_ai_fields_state()
         self._flash_saved()
 
     def _on_agy_model_changed(self, idx: int):
@@ -1034,6 +1122,7 @@ class SettingsWindow(QWidget):
         self.settings["agy_model"] = m
         save_settings(self.settings)
         self.settings_changed.emit(self.settings)
+        self._update_ai_fields_state()
         self._flash_saved()
         try:
             from island.agy_daemon import AgyDaemon
@@ -1058,6 +1147,7 @@ class SettingsWindow(QWidget):
         self.settings["vision_provider"] = v
         save_settings(self.settings)
         self.settings_changed.emit(self.settings)
+        self._update_ai_fields_state()
         self._flash_saved()
 
     def _on_gemini_key_changed(self, text: str):
