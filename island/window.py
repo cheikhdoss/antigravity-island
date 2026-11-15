@@ -840,8 +840,8 @@ class IslandWindow(QWidget):
         else:
             self.set_state("listening")
 
-        # Watchdog d'écoute manuelle (7.5s max si l'utilisateur ne clique pas à nouveau)
-        self.manual_listen_timer.start(7500)
+        # Watchdog d'écoute manuelle (14s max si l'utilisateur ne clique pas à nouveau)
+        self.manual_listen_timer.start(14000)
 
     def stop_manual_ask(self):
         """Arrête l'enregistrement manuel et passe à l'analyse de la requête."""

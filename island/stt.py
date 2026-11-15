@@ -15,7 +15,8 @@ try:
     import speech_recognition as sr
     _recognizer = sr.Recognizer()
     _recognizer.dynamic_energy_threshold = False
-    _recognizer.energy_threshold = 300
+    _recognizer.energy_threshold = 120  # Seuil abaissé à 120 pour capter les voix faibles et murmures
+    _recognizer.operation_timeout = 3.5  # Timeout strict pour ne jamais figer la transcription
     HAS_SR = True
 except Exception:
     HAS_SR = False
@@ -178,7 +179,7 @@ def get_current_stt_provider() -> str:
         pass
     return "antigravity"
 
-def transcribe_audio_antigravity(audio_input, timeout: float = 3.5) -> str:
+def transcribe_audio_antigravity(audio_input, timeout: float = None) -> str:
     """
     Transcrit l'audio via le moteur STT officiel Antigravity (Google LanguageServer StreamAudioTranscription).
     Précision maximale avec ponctuation et accents, supporte le flux audio 100% in-memory (bytes) ou chemin WAV.
@@ -196,6 +197,10 @@ def transcribe_audio_antigravity(audio_input, timeout: float = 3.5) -> str:
         except Exception:
             return ""
 
+    # Timeout adaptatif calculé selon la durée exacte de l'audio pour éviter tout faux timeout
+    audio_dur = len(audio_bytes) / 32000.0  # 16kHz mono 16-bit = 32000 octets/s
+    effective_timeout = timeout if timeout is not None else max(5.0, min(12.0, audio_dur * 1.4 + 2.0))
+
     with _agy_stt_lock:
         port, csrf, ctx = ensure_language_server_daemon()
         if not port or not csrf:
@@ -208,7 +213,7 @@ def transcribe_audio_antigravity(audio_input, timeout: float = 3.5) -> str:
             payload = json.dumps({'mimeType': 'audio/pcm;rate=16000', 'continuous': False}).encode('utf-8')
             envelope = struct.pack('>BI', 0, len(payload)) + payload
 
-            stream_conn = http.client.HTTPSConnection('127.0.0.1', port, context=ctx, timeout=timeout)
+            stream_conn = http.client.HTTPSConnection('127.0.0.1', port, context=ctx, timeout=effective_timeout)
             stream_conn.request(
                 'POST',
                 '/exa.language_server_pb.LanguageServerService/StreamAudioTranscription',
@@ -294,7 +299,7 @@ def transcribe_audio_antigravity(audio_input, timeout: float = 3.5) -> str:
             send_conn.getresponse().read()
             send_conn.close()
 
-            done_evt.wait(timeout=timeout)
+            done_evt.wait(timeout=effective_timeout)
 
             if final_text:
                 text = final_text[-1].strip()
@@ -317,7 +322,7 @@ def transcribe_audio_antigravity(audio_input, timeout: float = 3.5) -> str:
 
         return ""
 
-def transcribe_audio_google(audio_input) -> str:
+def transcribe_audio_google(audio_input, timeout: float = None) -> str:
     """
     Transcrit l'audio via l'API Google Cloud Speech en français avec timeout strict.
     Supporte buffer mémoire PCM (bytes) ou chemin WAV.
@@ -325,10 +330,25 @@ def transcribe_audio_google(audio_input) -> str:
     if not HAS_SR:
         return ""
 
+    if isinstance(audio_input, bytes):
+        raw_bytes = audio_input
+    else:
+        if not os.path.exists(audio_input):
+            return ""
+        try:
+            with open(audio_input, 'rb') as f:
+                raw_bytes = f.read()
+        except Exception:
+            return ""
+
+    audio_dur = len(raw_bytes) / 32000.0
+    effective_timeout = timeout if timeout is not None else max(5.0, min(12.0, audio_dur * 1.4 + 2.0))
+
     import socket
     old_timeout = socket.getdefaulttimeout()
     try:
-        socket.setdefaulttimeout(3.0)
+        socket.setdefaulttimeout(effective_timeout)
+        _recognizer.operation_timeout = effective_timeout
         if isinstance(audio_input, bytes):
             if len(audio_input) < 400:
                 return ""
@@ -424,6 +444,11 @@ def transcribe_audio(audio_input) -> str:
         if result:
             print(f"[STT] Transcrit en {time.time()-t0:.2f}s via Google Speech : '{result}'")
             return result
+        # Fallback Antigravity si Google rencontre un problème réseau ou quota
+        fallback_agy = transcribe_audio_antigravity(audio_input)
+        if fallback_agy:
+            print(f"[STT] Transcrit en {time.time()-t0:.2f}s via Antigravity Natif (Fallback) : '{fallback_agy}'")
+            return fallback_agy
     else:  # offline
         result = transcribe_audio_offline(audio_input)
         if result:

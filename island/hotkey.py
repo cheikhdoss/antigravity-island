@@ -221,9 +221,9 @@ class PushToTalkEngine:
         req_id = self.request_seq
         if self.mode == "hold":
             self.is_active = False
-            # Marge affinée à 90ms (au lieu de 280ms) pour capturer la fin naturelle du mot sans latence
+            # Marge de fin généreuse (380ms) pour capturer la fin naturelle du mot sans jamais couper la parole
             def delayed_capture(r_id):
-                time.sleep(0.09)
+                time.sleep(0.38)
                 if r_id == self.request_seq:
                     self._trigger_thinking_and_capture(r_id)
             threading.Thread(target=delayed_capture, args=(req_id,), daemon=True).start()
@@ -239,7 +239,7 @@ class PushToTalkEngine:
             if duration >= 0.15:
                 self.is_active = False
                 def delayed_capture(r_id):
-                    time.sleep(0.09)
+                    time.sleep(0.38)
                     if r_id == self.request_seq:
                         self._trigger_thinking_and_capture(r_id)
                 threading.Thread(target=delayed_capture, args=(req_id,), daemon=True).start()
